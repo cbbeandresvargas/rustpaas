@@ -30,3 +30,10 @@ CREATE TABLE IF NOT EXISTS buckets (
 -- Index for fast subdomain lookups (used by the proxy on every request)
 CREATE INDEX IF NOT EXISTS idx_projects_subdomain ON projects(subdomain);
 CREATE INDEX IF NOT EXISTS idx_buckets_project    ON buckets(project_id);
+
+CREATE TABLE IF NOT EXISTS sessions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL,
+    expires_at DATETIME NOT NULL,
+    FOREIGN KEY(user_id) REFERENCES users(id) ON DELETE CASCADE
+);

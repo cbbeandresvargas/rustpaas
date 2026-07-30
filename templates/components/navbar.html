@@ -6,8 +6,16 @@
             <span class="brand-version">v{{ paas_version }}</span>
         </a>
         <div class="navbar-links">
-            <a href="/" class="nav-link">Proyectos</a>
-            <a href="/api/projects" class="nav-link" target="_blank">API</a>
+            <a href="/docs" class="nav-link">Documentación</a>
+            {% if let Some(u) = user %}
+                <a href="/dashboard" class="nav-link">Dashboard</a>
+                <span style="color: var(--text-muted); margin-left: 1rem;">@{{ u.username }}</span>
+                <form action="/logout" method="POST" style="display:inline; margin-left: 1rem;">
+                    <button type="submit" class="btn btn-sm btn-secondary">Salir</button>
+                </form>
+            {% else %}
+                <a href="/login" class="btn btn-sm btn-primary" style="margin-left: 1rem;">Iniciar Sesión</a>
+            {% endif %}
         </div>
     </div>
 </nav>

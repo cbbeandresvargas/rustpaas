@@ -41,13 +41,60 @@ pub struct User {
 }
 
 impl User {
-    pub fn new(username: impl Into<String>, password_hash: impl Into<String>) -> Self {
+    pub fn new(username: impl Into<String>, password: &str) -> Self {
+        let hash = bcrypt::hash(password, bcrypt::DEFAULT_COST).unwrap_or_default();
         User {
             id: Uuid::new_v4().to_string(),
             username: username.into(),
-            password_hash: password_hash.into(),
+            password_hash: hash,
             created_at: Utc::now(),
         }
+    }
+
+    pub fn verify_password(&self, password: &str) -> bool {
+        bcrypt::verify(password, &self.password_hash).unwrap_or(false)
+    }
+}
+
+// ─────────────────────────────────────────────
+// Session
+// ─────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct Session {
+    pub id: String,
+    pub user_id: String,
+    pub expires_at: DateTime<Utc>,
+}
+
+impl Session {
+    pub fn new(user_id: impl Into<String>) -> Self {
+        Session {
+            id: Uuid::new_v4().to_string(),
+            user_id: user_id.into(),
+            // Sessions expire in 7 days
+            expires_at: Utc::now() + chrono::Duration::days(7),
+        }
+    }
+
+    pub async fn insert(&self, db: &SqlitePool) -> Result<(), sqlx::Error> {
+        sqlx::query(
+            "INSERT INTO sessions (id, user_id, expires_at) VALUES (?, ?, ?)"
+        )
+        .bind(&self.id)
+        .bind(&self.user_id)
+        .bind(self.expires_at)
+        .execute(db)
+        .await?;
+        Ok(())
+    }
+
+    pub async fn delete(&self, db: &SqlitePool) -> Result<(), sqlx::Error> {
+        sqlx::query("DELETE FROM sessions WHERE id = ?")
+            .bind(&self.id)
+            .execute(db)
+            .await?;
+        Ok(())
     }
 }
 

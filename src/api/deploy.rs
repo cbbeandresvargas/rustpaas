@@ -318,16 +318,24 @@ pub async fn download_backup(
 // Internal helpers
 // ─────────────────────────────────────────────
 
-async fn ensure_admin_user(db: &SqlitePool) -> anyhow::Result<String> {
+pub async fn ensure_admin_user(db: &SqlitePool) -> anyhow::Result<String> {
     let existing: Option<(String,)> = sqlx::query_as("SELECT id FROM users WHERE username = 'admin' LIMIT 1")
         .fetch_optional(db)
         .await?;
 
+    let admin123_hash = bcrypt::hash("admin123", bcrypt::DEFAULT_COST).unwrap_or_default();
+
     if let Some((id,)) = existing {
+        // Update the password in case it was created in an older phase with placeholder
+        sqlx::query("UPDATE users SET password_hash = ? WHERE id = ?")
+            .bind(&admin123_hash)
+            .bind(&id)
+            .execute(db)
+            .await?;
         return Ok(id);
     }
 
-    let user = crate::db::models::User::new("admin", "$placeholder_hash$");
+    let user = crate::db::models::User::new("admin", "admin123");
     sqlx::query(
         "INSERT OR IGNORE INTO users (id, username, password_hash, created_at) VALUES (?, ?, ?, ?)",
     )
@@ -337,6 +345,8 @@ async fn ensure_admin_user(db: &SqlitePool) -> anyhow::Result<String> {
     .bind(user.created_at)
     .execute(db)
     .await?;
+
+    tracing::info!("⚠️ Created default admin user: admin / admin123");
 
     Ok(user.id)
 }

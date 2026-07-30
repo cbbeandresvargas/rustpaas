@@ -39,6 +39,9 @@ async fn main() -> Result<()> {
     let db_pool = db::init_pool(&config).await?;
     info!("🗃️  SQLite initialized at {}", config.db_path().display());
 
+    // Ensure the default admin user exists
+    crate::api::deploy::ensure_admin_user(&db_pool).await.expect("Failed to ensure admin user exists");
+
     // Initialize S3 engine
     let s3_handle = s3::start_server(&config).await?;
     info!("🪣  S3 engine listening on port {}", config.s3_port);
@@ -110,8 +113,15 @@ mod router {
     use crate::dashboard::handlers as dash;
     use crate::api::deploy;
 
+    use crate::dashboard::auth;
+
     pub fn build(state: AppState) -> Router {
-        // Dashboard & management routes
+        // Auth routes
+        let auth_routes = Router::new()
+            .route("/login", get(auth::login_page).post(auth::login_post))
+            .route("/logout", axum::routing::post(auth::logout_post));
+
+        // Dashboard & management routes (all prefixed with /dashboard)
         let dashboard_routes = Router::new()
             .route("/", get(dash::index))
             .route("/projects/{id}", get(dash::project_detail))
@@ -138,7 +148,10 @@ mod router {
         // dashboard route. To solve this properly we use the subdomain-aware
         // handler approach: the proxy_handler checks the Host header itself.
         Router::new()
-            .merge(dashboard_routes)
+            .route("/", get(dash::landing))
+            .route("/docs", get(dash::docs))
+            .merge(auth_routes)
+            .nest("/dashboard", dashboard_routes)
             .nest("/api", api_routes)
             .nest_service("/static", ServeDir::new("static"))
             // Fallback for unknown paths — proxy checks Host header
