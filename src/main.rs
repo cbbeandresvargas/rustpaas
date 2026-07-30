@@ -42,10 +42,6 @@ async fn main() -> Result<()> {
     // Ensure the default admin user exists
     crate::api::deploy::ensure_admin_user(&db_pool).await.expect("Failed to ensure admin user exists");
 
-    // Initialize S3 engine
-    let s3_handle = s3::start_server(&config).await?;
-    info!("🪣  S3 engine listening on port {}", config.s3_port);
-
     // Build shared application state
     let state = api::AppState {
         config: config.clone(),
@@ -97,9 +93,6 @@ async fn main() -> Result<()> {
 
     axum::serve(listener, app).await?;
 
-    // Shutdown S3
-    drop(s3_handle);
-
     Ok(())
 }
 
@@ -119,6 +112,7 @@ mod router {
         // Auth routes
         let auth_routes = Router::new()
             .route("/login", get(auth::login_page).post(auth::login_post))
+            .route("/register", get(auth::register_page).post(auth::register_post))
             .route("/logout", axum::routing::post(auth::logout_post));
 
         // Dashboard & management routes (all prefixed with /dashboard)
@@ -133,6 +127,7 @@ mod router {
             .route("/projects/{id}", axum::routing::delete(deploy::delete_project))
             .route("/projects/{id}/restart", axum::routing::post(deploy::restart_project))
             .route("/projects/{id}/stop", axum::routing::post(deploy::stop_project))
+            .route("/projects/{id}/env", get(deploy::get_env).post(deploy::update_env))
             .route("/projects/{id}/backup", get(deploy::download_backup))
             .route("/deploy", axum::routing::post(deploy::deploy));
 
@@ -150,6 +145,7 @@ mod router {
         Router::new()
             .route("/", get(dash::landing))
             .route("/docs", get(dash::docs))
+            .route("/set_lang", get(dash::set_lang))
             .merge(auth_routes)
             .nest("/dashboard", dashboard_routes)
             .nest("/api", api_routes)

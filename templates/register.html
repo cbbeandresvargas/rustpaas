@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Login - {{ app_name }}</title>
+    <title>Register - {{ app_name }}</title>
     <link rel="stylesheet" href="/static/styles.css">
     <style>
         body {
@@ -67,7 +67,7 @@
 </head>
 <body>
     <div class="login-box">
-        <h1>{{ t.login_title }}{{ app_name }}</h1>
+        <h1>{{ t.reg_title }}{{ app_name }}</h1>
         
         {% if let Some(err) = error %}
         <div class="error-msg">
@@ -75,7 +75,7 @@
         </div>
         {% endif %}
 
-        <form action="/login" method="POST">
+        <form action="/register" method="POST">
             <div class="form-group">
                 <label for="username">{{ t.login_user }}</label>
                 <input type="text" id="username" name="username" required autofocus>
@@ -84,10 +84,10 @@
                 <label for="password">{{ t.login_pass }}</label>
                 <input type="password" id="password" name="password" required>
             </div>
-            <button type="submit" class="btn btn-primary btn-block">{{ t.login_btn }}</button>
+            <button type="submit" class="btn btn-primary btn-block">{{ t.reg_btn }}</button>
         </form>
         <div style="text-align: center; margin-top: 1.5rem;">
-            <a href="/register" style="color: var(--color-primary); text-decoration: none; font-size: 0.9rem;">{{ t.login_register_link }}</a>
+            <a href="/login" style="color: var(--color-muted); text-decoration: none; font-size: 0.9rem;">{{ t.reg_login_link }}</a>
         </div>
         <div style="text-align: center; margin-top: 0.5rem;">
             <a href="/" style="color: var(--color-muted); text-decoration: none; font-size: 0.9rem;">{{ t.login_back }}</a>

@@ -28,6 +28,9 @@ pub struct ProjectDetailTemplate {
     pub project: Project,
     pub buckets: Vec<Bucket>,
     pub objects: Vec<S3Object>,
+    pub s3_port: u16,
+    pub s3_access_key: String,
+    pub s3_secret_key: String,
     pub log_lines: Vec<String>,
     pub user: Option<User>,
     pub app_name: String,
@@ -79,6 +82,15 @@ pub struct DocsTemplate {
 #[derive(Template)]
 #[template(path = "login.html")]
 pub struct LoginTemplate {
+    pub error: Option<String>,
+    pub app_name: String,
+    pub t: &'static Dict,
+    pub paas_version: &'static str,
+}
+
+#[derive(Template)]
+#[template(path = "register.html")]
+pub struct RegisterTemplate {
     pub error: Option<String>,
     pub app_name: String,
     pub t: &'static Dict,

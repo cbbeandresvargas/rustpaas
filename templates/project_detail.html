@@ -14,7 +14,7 @@
         <!-- Header -->
         <div class="page-header">
             <div>
-                <a href="/" class="back-link">← Volver</a>
+                <a href="/dashboard" class="back-link">{{ t.detail_back }}</a>
                 <h1>{{ project.name }}</h1>
                 <span class="badge badge-{{ project.status }}">{{ project.status }}</span>
                 <code class="subdomain-pill">:{{ project.port }}</code>
@@ -43,7 +43,7 @@
                     <dd><code>{{ project.subdomain }}</code></dd>
                     <dt>{{ t.detail_port }}</dt>
                     <dd><code>:{{ project.port }}</code></dd>
-                    <dt>PID del proceso</dt>
+                    <dt>{{ t.detail_pid }}</dt>
                     <dd>
                         {% match project.pid %}
                         {% when Some with (pid) %}
@@ -52,18 +52,28 @@
                             <span class="text-muted">—</span>
                         {% endmatch %}
                     </dd>
-                    <dt>Creado</dt>
+                    <dt>{{ t.detail_created }}</dt>
                     <dd class="text-muted">{{ project.created_at }}</dd>
                     <dt>{{ t.detail_updated }}</dt>
                     <dd class="text-muted">{{ project.updated_at }}</dd>
                 </dl>
                 <div class="env-block">
-                    <h3>Variables de entorno inyectadas</h3>
+                    <h3>{{ t.detail_system_env }}</h3>
+                    <p class="text-muted" style="font-size: 0.8rem; margin-bottom: 0.75rem;">{{ t.detail_system_env_desc }}</p>
                     <pre class="code-block">DATABASE_URL=sqlite:///var/lib/mypaas/apps/{{ project.name }}/data/app.db
-S3_ENDPOINT=http://localhost:9000
+S3_ENDPOINT=http://localhost:{{ s3_port }}
 S3_BUCKET=bucket-{{ project.name }}
+AWS_ACCESS_KEY_ID={{ s3_access_key }}
+AWS_SECRET_ACCESS_KEY={{ s3_secret_key }}
+AWS_REGION=us-east-1
 PORT={{ project.port }}
 APP_NAME={{ project.name }}</pre>
+                </div>
+                <div class="env-block">
+                    <h3>{{ t.detail_custom_env }}</h3>
+                    <p class="text-muted" style="font-size: 0.8rem; margin-bottom: 0.75rem;">{{ t.detail_custom_env_desc }}</p>
+                    <textarea id="env-editor" spellcheck="false" class="code-block" style="width: 100%; height: 120px; resize: vertical; border-radius: var(--radius); outline: none; margin-bottom: 0.75rem; font-family: monospace;" placeholder="MY_API_KEY=123&#10;DEBUG=true"></textarea>
+                    <button class="btn btn-sm btn-primary" id="btn-save-env" onclick="saveEnv('{{ project.id }}')">{{ t.detail_env_save }}</button>
                 </div>
             </div>
 
@@ -71,7 +81,7 @@ APP_NAME={{ project.name }}</pre>
             <div class="card">
                 <h2 class="card-title">{{ t.detail_buckets }} ({{ buckets.len() }})</h2>
                 {% if buckets.is_empty() %}
-                    <p class="text-muted">Sin buckets aún.</p>
+                    <p class="text-muted">{{ t.detail_no_buckets }}</p>
                 {% else %}
                     {% for bucket in buckets %}
                     <div class="bucket-header">
@@ -80,9 +90,9 @@ APP_NAME={{ project.name }}</pre>
                     {% endfor %}
 
                     {% if objects.is_empty() %}
-                    <p class="text-muted" style="margin-top: 1rem;">El bucket está vacío.</p>
+                    <p class="text-muted" style="margin-top: 1rem;">{{ t.detail_empty_bucket }}</p>
                     {% else %}
-                    <h3 class="section-subtitle">Objetos</h3>
+                    <h3 class="section-subtitle">{{ t.detail_objects }}</h3>
                     <ul class="object-list">
                         {% for obj in objects %}
                         <li class="object-item">
@@ -102,7 +112,7 @@ APP_NAME={{ project.name }}</pre>
                 <h2 class="card-title" style="margin: 0;">{{ t.detail_logs }}</h2>
                 <div style="display: flex; gap: 0.5rem; align-items: center;">
                     <span class="pulse-dot" id="log-status-dot"></span>
-                    <span class="text-muted" id="log-status-text">Conectando...</span>
+                    <span class="text-muted" id="log-status-text">{{ t.detail_log_conn }}</span>
                     <button class="btn btn-sm btn-secondary" onclick="toggleAutoScroll()" id="btn-autoscroll">
                         Auto-scroll: ON
                     </button>

@@ -139,10 +139,123 @@ document.addEventListener('DOMContentLoaded', () => {
     const projectId = window.MYPAAS_PROJECT_ID;
     if (projectId) {
         startLogPolling(projectId);
+        loadEnv(projectId);
     }
 });
+
+// ─── Environment Variables (.env) ──────────────────────────────────────────
+
+async function loadEnv(projectId) {
+    const editor = document.getElementById('env-editor');
+    if (!editor) return;
+
+    try {
+        const res = await fetch(`/api/projects/${projectId}/env`);
+        if (res.ok) {
+            const text = await res.text();
+            editor.value = text;
+        }
+    } catch (e) {
+        console.error("Failed to load .env:", e);
+    }
+}
+
+async function saveEnv(projectId) {
+    const editor = document.getElementById('env-editor');
+    if (!editor) return;
+    const btn = document.getElementById('btn-save-env');
+    if (btn) btn.disabled = true;
+
+    try {
+        const res = await fetch(`/api/projects/${projectId}/env`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ env_content: editor.value }),
+        });
+        const data = await res.json();
+        
+        if (res.ok) {
+            showToast('✅ Variables guardadas y proyecto reiniciado', 'success');
+        } else {
+            showToast(`❌ Error al guardar: ${data.error}`, 'error');
+        }
+    } catch (e) {
+        showToast(`❌ Error de red: ${e.message}`, 'error');
+    } finally {
+        if (btn) btn.disabled = false;
+    }
+}
 
 // Cleanup on page unload
 window.addEventListener('beforeunload', () => {
     if (logPollInterval) clearInterval(logPollInterval);
 });
+
+// ─── New Project Modal ─────────────────────────────────────────────────────
+
+function openNewProjectModal() {
+    const modal = document.getElementById('new-project-modal');
+    if (modal) {
+        modal.style.display = 'flex';
+        document.getElementById('new-project-name').focus();
+    }
+}
+
+function closeNewProjectModal() {
+    const modal = document.getElementById('new-project-modal');
+    if (modal) {
+        modal.style.display = 'none';
+        document.getElementById('new-project-form').reset();
+    }
+}
+
+async function submitNewProject(e) {
+    e.preventDefault();
+    const btn = document.getElementById('btn-submit-project');
+    const originalText = btn.textContent;
+    btn.textContent = 'Subiendo...';
+    btn.disabled = true;
+
+    const form = document.getElementById('new-project-form');
+    const formData = new FormData(form);
+
+    try {
+        const res = await fetch('/api/deploy', {
+            method: 'POST',
+            body: formData,
+        });
+        const data = await res.json();
+        
+        if (res.ok) {
+            showToast('✅ Proyecto subido y desplegado con éxito', 'success');
+            closeNewProjectModal();
+            setTimeout(() => window.location.reload(), 1000);
+        } else {
+            showToast(`❌ Error: ${data.error}`, 'error');
+        }
+    } catch (err) {
+        showToast(`❌ Error de red: ${err.message}`, 'error');
+    } finally {
+        btn.textContent = originalText;
+        btn.disabled = false;
+    }
+}
+
+// Close modal when clicking outside
+window.addEventListener('click', (e) => {
+    const modal = document.getElementById('new-project-modal');
+    if (e.target === modal) {
+        closeNewProjectModal();
+    }
+});
+
+// ─── Copy API Key Command ──────────────────────────────────────────────────
+
+function copyCurlCommand() {
+    const cmdElement = document.getElementById('curl-cmd');
+    if (!cmdElement) return;
+    
+    navigator.clipboard.writeText(cmdElement.textContent)
+        .then(() => showToast('✅ Comando copiado al portapapeles', 'success'))
+        .catch(err => showToast(`❌ Error al copiar: ${err}`, 'error'));
+}

@@ -5,8 +5,11 @@ CREATE TABLE IF NOT EXISTS users (
     id           TEXT PRIMARY KEY NOT NULL,
     username     TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
+    api_key      TEXT,
     created_at   TEXT NOT NULL DEFAULT (datetime('now'))
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_users_api_key ON users(api_key);
 
 CREATE TABLE IF NOT EXISTS projects (
     id          TEXT PRIMARY KEY NOT NULL,

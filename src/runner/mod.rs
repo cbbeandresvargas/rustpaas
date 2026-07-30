@@ -18,12 +18,24 @@ pub mod proxy;
 
 /// Tracks all running app processes.
 /// Stored in shared Axum state (Arc<Mutex<...>>).
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct ProcessManager {
     /// Map from project_id → running child process
     processes: HashMap<String, Child>,
+    /// Map from project_id → S3 server handle
+    s3_processes: HashMap<String, crate::s3::S3Handle>,
     /// Map from project_id → last request timestamp (for auto-suspend)
     last_activity: HashMap<String, std::time::Instant>,
+}
+
+impl Default for ProcessManager {
+    fn default() -> Self {
+        Self {
+            processes: HashMap::new(),
+            s3_processes: HashMap::new(),
+            last_activity: HashMap::new(),
+        }
+    }
 }
 
 impl ProcessManager {
@@ -39,6 +51,7 @@ impl ProcessManager {
                 Ok(Some(_)) => {
                     // Process has exited
                     self.processes.remove(project_id);
+                    self.s3_processes.remove(project_id);
                     false
                 }
                 Ok(None) => true, // Still running
@@ -99,15 +112,64 @@ pub async fn spawn_process(
         "sqlite://{}",
         data_dir.join("app.db").display()
     );
-    let s3_endpoint = format!("http://localhost:{}", config.s3_port);
+    let s3_port = (project.port as u16) + 10000;
+    let s3_endpoint = format!("http://127.0.0.1:{}", s3_port);
     let bucket_name = format!("bucket-{}", project.name);
 
-    let child = Command::new(&binary_path)
+    // Get or generate S3 secret key
+    let s3_secret_path = data_dir.join(".s3_secret");
+    let s3_secret = if s3_secret_path.exists() {
+        std::fs::read_to_string(&s3_secret_path).unwrap_or_else(|_| uuid::Uuid::new_v4().to_string())
+    } else {
+        let new_secret = uuid::Uuid::new_v4().to_string();
+        let _ = std::fs::write(&s3_secret_path, &new_secret);
+        new_secret
+    };
+
+    let s3_access_key = project.id.clone();
+
+    // Start private isolated S3 server
+    let s3_handle = crate::s3::start_project_s3(
+        config,
+        &project.id,
+        s3_port,
+        &s3_access_key,
+        &s3_secret,
+    ).await.context("Failed to start isolated S3 server")?;
+
+    let mut child_cmd = Command::new(&binary_path);
+    
+    // First, set the default system variables
+    child_cmd
         .env("DATABASE_URL", &db_url)
         .env("S3_ENDPOINT", &s3_endpoint)
         .env("S3_BUCKET", &bucket_name)
+        .env("AWS_ACCESS_KEY_ID", &s3_access_key)
+        .env("AWS_SECRET_ACCESS_KEY", &s3_secret)
+        .env("AWS_REGION", "us-east-1")
         .env("PORT", project.port.to_string())
-        .env("APP_NAME", &project.name)
+        .env("APP_NAME", &project.name);
+
+    // Parse custom .env file if it exists. 
+    // This allows users to OVERRIDE the local S3 with their own external AWS/S3 credentials.
+    let env_path = data_dir.join(".env");
+    if let Ok(env_content) = std::fs::read_to_string(&env_path) {
+        for line in env_content.lines() {
+            let line = line.trim();
+            if line.is_empty() || line.starts_with('#') {
+                continue;
+            }
+            if let Some((k, v)) = line.split_once('=') {
+                let key = k.trim();
+                // PORT cannot be overridden because it breaks the reverse proxy routing
+                if key != "PORT" {
+                    child_cmd.env(key, v.trim());
+                }
+            }
+        }
+    }
+
+    let child = child_cmd
         .stdout(std::process::Stdio::from(log_file))
         .stderr(std::process::Stdio::from(log_file_err))
         .spawn()
@@ -124,6 +186,7 @@ pub async fn spawn_process(
     {
         let mut mgr = manager.lock().await;
         mgr.processes.insert(project.id.clone(), child);
+        mgr.s3_processes.insert(project.id.clone(), s3_handle);
         mgr.record_activity(&project.id);
     }
 
@@ -138,7 +201,8 @@ pub async fn kill_process(
     let mut mgr = manager.lock().await;
     if let Some(mut child) = mgr.processes.remove(project_id) {
         child.kill().await.context("Failed to kill process")?;
-        info!("⏹️  Killed process for project: {}", project_id);
+        mgr.s3_processes.remove(project_id); // Drop will stop the S3 server
+        info!("⏹️  Killed process and S3 server for project: {}", project_id);
     } else {
         warn!("No running process found for project: {}", project_id);
     }

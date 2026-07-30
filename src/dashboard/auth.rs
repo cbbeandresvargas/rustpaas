@@ -170,6 +170,64 @@ pub async fn login_post(
     Html(askama::Template::render(&tmpl).unwrap()).into_response()
 }
 
+pub async fn register_page(Lang(t): Lang, State(state): State<AppState>) -> Response {
+    let tmpl = crate::dashboard::templates::RegisterTemplate { 
+        error: None,
+        app_name: state.config.app_name.clone(),
+        t,
+        paas_version: env!("CARGO_PKG_VERSION"),
+    };
+    Html(askama::Template::render(&tmpl).unwrap()).into_response()
+}
+
+pub async fn register_post(
+    Lang(t): Lang,
+    State(state): State<AppState>,
+    Form(payload): Form<LoginPayload>,
+) -> Response {
+    let error_msg;
+    
+    if payload.password.len() < 6 {
+        error_msg = Some(t.reg_err_len.to_string());
+    } else {
+        // Check if user exists
+        let existing: Option<(String,)> = sqlx::query_as("SELECT id FROM users WHERE username = ?")
+            .bind(&payload.username)
+            .fetch_optional(&state.db)
+            .await
+            .unwrap_or(None);
+
+        if existing.is_some() {
+            error_msg = Some(t.reg_err_exists.to_string());
+        } else {
+            let user = User::new(&payload.username, &payload.password);
+            if let Err(e) = sqlx::query("INSERT INTO users (id, username, password_hash, api_key, created_at) VALUES (?, ?, ?, ?, ?)")
+                .bind(&user.id)
+                .bind(&user.username)
+                .bind(&user.password_hash)
+                .bind(&user.api_key)
+                .bind(user.created_at)
+                .execute(&state.db)
+                .await 
+            {
+                error!("Failed to register user: {}", e);
+                error_msg = Some("Internal error".to_string());
+            } else {
+                info!("New user registered: {}", user.username);
+                return Redirect::to("/login").into_response();
+            }
+        }
+    }
+
+    let tmpl = crate::dashboard::templates::RegisterTemplate { 
+        error: error_msg,
+        app_name: state.config.app_name.clone(),
+        t,
+        paas_version: env!("CARGO_PKG_VERSION"),
+    };
+    Html(askama::Template::render(&tmpl).unwrap()).into_response()
+}
+
 pub async fn logout_post(
     State(state): State<AppState>,
     jar: CookieJar,

@@ -8,7 +8,9 @@
 *   🪣 **Motor S3 Nativo:** No necesitas configurar AWS. Cada proyecto cuenta con un bucket S3 dedicado alojado directamente en el mismo servidor de RustPaaS. El motor (basado en `s3s`) se levanta embebido en el mismo proceso del PaaS.
 *   🔄 **Integración CI/CD:** Puedes integrar tus despliegues directamente con GitHub Actions. Simplemente haces `push` a tu repositorio, el código se compila a un binario standalone y se sube automáticamente a RustPaaS mediante su API.
 *   🗄️ **Soporte para SQLite:** RustPaaS inyecta variables de entorno a cada proyecto para utilizar almacenamiento local con SQLite, con soporte de backups "en vivo" a través del panel de control.
-*   🔒 **Dashboard Protegido:** Un panel de control intuitivo para gestionar aplicaciones, puertos, logs y buckets, completamente asegurado con autenticación.
+*   🔒 **Dashboard Protegido y Completo:** Un panel de control intuitivo para gestionar aplicaciones, puertos, ver **logs en tiempo real**, explorar buckets y descargar backups de la base de datos.
+*   🌍 **Internacionalización (i18n):** La interfaz detecta automáticamente el idioma de tu navegador (`Accept-Language`) y se muestra en Español o Inglés sin configuraciones extra.
+*   🎨 **Nombre Personalizable:** ¿No quieres que se llame "RustPaaS"? Simplemente inicia el servidor con la variable de entorno `APP_NAME="Mi Nube"` y toda la plataforma (UI y Documentación) adoptará tu marca.
 
 ## 🛠️ Cómo Funciona
 
@@ -16,7 +18,17 @@ El PaaS actúa como un monolito que levanta un servidor HTTP principal y enruta 
 1.  **Panel de Administración / API:** Accesible en el dominio/puerto principal, te permite hacer *deploy*, revisar el estado y administrar tus proyectos.
 2.  **Reverse Proxy por Subdominio:** Cualquier otra petición inspecciona el encabezado `Host` para enrutar transparentemente la solicitud hacia el puerto interno donde está corriendo el binario de tu aplicación.
 
-## 🚀 Despliegue de Aplicaciones
+## 🚀 Cómo Empezar
+
+Para correr la plataforma localmente o en tu servidor, no necesitas dependencias externas pesadas. Simplemente compila y ejecuta:
+
+```bash
+# Opcional: Define tu propio nombre para el PaaS
+APP_NAME="Mi Nube" cargo run --release
+```
+El servidor levantará en el puerto `3000` por defecto. *(Nota: Para entornos de producción se recomienda poner RustPaaS detrás de un proxy inverso como **Caddy** o **Nginx** para manejar automáticamente los certificados HTTPS SSL).*
+
+## 📦 Despliegue de Aplicaciones
 
 Puedes desplegar una aplicación enviando su binario compilado al API:
 

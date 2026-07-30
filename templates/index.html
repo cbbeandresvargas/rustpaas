@@ -16,9 +16,9 @@
                 <h1>{{ t.idx_title }}</h1>
                 <p class="subtitle">{{ projects.len() }} {{ t.idx_subtitle_apps }}</p>
             </div>
-            <a href="#deploy-docs" class="btn btn-primary" id="btn-new-deploy">
-                {{ t.idx_new_deploy }}
-            </a>
+            <button class="btn btn-primary" onclick="openNewProjectModal()">
+                {{ t.btn_new_project }}
+            </button>
         </div>
 
         {% if projects.is_empty() %}
@@ -26,9 +26,7 @@
             <div class="empty-icon">🚀</div>
             <h2>{{ t.idx_no_projects }}</h2>
             <p>{{ t.idx_deploy_first }}</p>
-            <pre class="code-block">curl -X POST http://localhost:3000/api/deploy \
-  -F "name=mi-app" \
-  -F "binary=@./mi-app-linux-x64"</pre>
+            <button class="btn btn-primary" onclick="openNewProjectModal()" style="margin-top: 1rem;">{{ t.btn_new_project }}</button>
         </div>
         {% else %}
         <div class="card">
@@ -47,7 +45,7 @@
                     {% for project in projects %}
                     <tr id="project-row-{{ project.id }}">
                         <td>
-                            <a href="/projects/{{ project.id }}" class="project-link">
+                            <a href="/dashboard/projects/{{ project.id }}" class="project-link">
                                 {{ project.name }}
                             </a>
                         </td>
@@ -64,7 +62,7 @@
                         </td>
                         <td class="text-muted">{{ project.updated_at }}</td>
                         <td class="actions">
-                            <a href="/projects/{{ project.id }}" class="btn btn-sm btn-secondary" title="Ver detalle">
+                            <a href="/dashboard/projects/{{ project.id }}" class="btn btn-sm btn-secondary" title="Ver detalle">
                                 👁
                             </a>
                             <button
@@ -85,17 +83,46 @@
         </div>
         {% endif %}
 
-        <div class="card" id="deploy-docs" style="margin-top: 2rem;">
-            <h2 class="card-title">{{ t.idx_how_to_deploy }}</h2>
-            <pre class="code-block"># Subir un binario compilado para Linux
-curl -X POST http://localhost:3000/api/deploy \
+        {% if let Some(u) = user %}
+        <div class="card" id="api-key-docs" style="margin-top: 2rem; display: flex; flex-direction: column; gap: 1rem;">
+            <div>
+                <h2 class="card-title">{{ t.api_key_title }}</h2>
+                <p class="text-muted">{{ t.api_key_desc }}</p>
+            </div>
+            
+            <pre class="code-block" id="curl-cmd">curl -X POST http://localhost:3000/api/deploy \
+  -H "Authorization: Bearer {{ u.api_key.as_deref().unwrap_or("") }}" \
   -F "name=mi-app" \
-  -F "binary=@./mi-app-linux-x64"
-
-# Ver todos los proyectos (JSON)
-curl http://localhost:3000/api/projects</pre>
+  -F "binary=@./mi-app-linux-x64"</pre>
+            
+            <button class="btn btn-secondary btn-sm" style="align-self: flex-start;" onclick="copyCurlCommand()">{{ t.api_key_copy }}</button>
         </div>
+        {% endif %}
     </main>
+
+    <!-- New Project Modal -->
+    <div id="new-project-modal" class="modal" style="display: none; position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(0,0,0,0.5); z-index: 1000; align-items: center; justify-content: center;">
+        <div class="card" style="width: 100%; max-width: 500px; margin: 2rem;">
+            <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
+                <h2 style="margin: 0;">{{ t.modal_new_title }}</h2>
+                <button onclick="closeNewProjectModal()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--text-muted);">&times;</button>
+            </div>
+            
+            <form id="new-project-form" onsubmit="submitNewProject(event)">
+                <div style="margin-bottom: 1rem;">
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">{{ t.modal_new_name }}</label>
+                    <input type="text" id="new-project-name" name="name" required pattern="[a-z0-9\-]+" style="width: 100%; padding: 0.75rem; border-radius: var(--radius); border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color);" placeholder="my-awesome-app">
+                </div>
+                
+                <div style="margin-bottom: 1.5rem;">
+                    <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">{{ t.modal_new_file }}</label>
+                    <input type="file" id="new-project-file" name="binary" required style="width: 100%; padding: 0.75rem; border-radius: var(--radius); border: 1px dashed var(--border-color); background: var(--bg-color); color: var(--text-color);">
+                </div>
+                
+                <button type="submit" id="btn-submit-project" class="btn btn-primary" style="width: 100%;">{{ t.modal_new_submit }}</button>
+            </form>
+        </div>
+    </div>
 
     <script src="/static/app.js"></script>
 </body>

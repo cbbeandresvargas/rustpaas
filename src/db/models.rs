@@ -37,16 +37,20 @@ pub struct User {
     pub id: String,
     pub username: String,
     pub password_hash: String,
+    pub api_key: Option<String>,
     pub created_at: DateTime<Utc>,
 }
 
 impl User {
     pub fn new(username: impl Into<String>, password: &str) -> Self {
         let hash = bcrypt::hash(password, bcrypt::DEFAULT_COST).unwrap_or_default();
+        // Generate a random prefix 'paas_sk_' + 32 hex chars
+        let api_key = format!("paas_sk_{}", uuid::Uuid::new_v4().to_string().replace("-", ""));
         User {
             id: Uuid::new_v4().to_string(),
             username: username.into(),
             password_hash: hash,
+            api_key: Some(api_key),
             created_at: Utc::now(),
         }
     }

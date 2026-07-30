@@ -86,8 +86,53 @@ async fn allocate_port(config: &Config, db: &SqlitePool) -> anyhow::Result<u16> 
 /// - `name`: project name (also becomes the subdomain)
 pub async fn deploy(
     State(state): State<AppState>,
+    jar: axum_extra::extract::cookie::CookieJar,
+    headers: axum::http::HeaderMap,
     mut multipart: Multipart,
 ) -> Response {
+    // Check Authentication:
+    // 1. Bearer Token (API Key)
+    // 2. Or Session Cookie
+    let mut authenticated_user: Option<String> = None;
+
+    if let Some(auth_header) = headers.get("Authorization") {
+        if let Ok(auth_str) = auth_header.to_str() {
+            if auth_str.starts_with("Bearer ") {
+                let api_key = &auth_str[7..];
+                if let Ok(Some((uid,))) = sqlx::query_as::<_, (String,)>("SELECT id FROM users WHERE api_key = ?")
+                    .bind(api_key)
+                    .fetch_optional(&state.db)
+                    .await 
+                {
+                    authenticated_user = Some(uid);
+                }
+            }
+        }
+    }
+
+    if authenticated_user.is_none() {
+        if let Some(cookie) = jar.get(crate::dashboard::auth::SESSION_COOKIE_NAME) {
+            let query = "
+                SELECT u.id FROM users u 
+                JOIN sessions s ON u.id = s.user_id 
+                WHERE s.id = ? AND s.expires_at > ?
+            ";
+            if let Ok(Some((uid,))) = sqlx::query_as::<_, (String,)>(query)
+                .bind(cookie.value())
+                .bind(chrono::Utc::now())
+                .fetch_optional(&state.db)
+                .await 
+            {
+                authenticated_user = Some(uid);
+            }
+        }
+    }
+
+    let user_id = match authenticated_user {
+        Some(uid) => uid,
+        None => return api_err(StatusCode::UNAUTHORIZED, "Authentication required. Provide a valid session cookie or Bearer API key."),
+    };
+
     let mut binary_bytes: Option<bytes::Bytes> = None;
     let mut project_name: Option<String> = None;
 
@@ -126,10 +171,7 @@ pub async fn deploy(
         Err(e) => return api_err(StatusCode::SERVICE_UNAVAILABLE, format!("No ports available: {}", e)),
     };
 
-    // Create or find a dummy admin user (Phase 1: single-user mode)
-    let user_id = ensure_admin_user(&state.db).await.unwrap_or_else(|_| "admin".to_string());
-
-    // Create the project record
+    // The project owner is the authenticated user
     let project = Project::new(&name, &name, port, &user_id);
     if let Err(e) = project.insert(&state.db).await {
         return api_err(StatusCode::INTERNAL_SERVER_ERROR, format!("DB error: {}", e));
@@ -157,10 +199,10 @@ pub async fn deploy(
         let _ = std::fs::set_permissions(&bin_path, std::fs::Permissions::from_mode(0o755));
     }
 
-    // Create S3 bucket for this project
-    let bucket_name = format!("bucket-{}", name);
-    if let Err(e) = s3::create_bucket(&state.config, &bucket_name) {
-        error!("Failed to create bucket: {}", e);
+    // Create an initial S3 bucket for this project
+    let bucket_name = format!("bucket-{}", project.name);
+    if let Err(e) = s3::create_bucket(&state.config, &project.id, &bucket_name) {
+        tracing::error!("Failed to create initial S3 bucket: {}", e);
     } else {
         let bucket = Bucket::new(&bucket_name, &project.id);
         let _ = bucket.insert(&state.db).await;
@@ -314,6 +356,61 @@ pub async fn download_backup(
     }
 }
 
+/// GET /api/projects/:id/env — Get the raw .env file contents for the project
+pub async fn get_env(
+    Path(id): Path<String>,
+    State(state): State<AppState>,
+) -> Response {
+    let project = match Project::find_by_id(&state.db, &id).await {
+        Ok(Some(p)) => p,
+        Ok(None) => return api_err(StatusCode::NOT_FOUND, "Project not found"),
+        Err(e) => return api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+    };
+
+    let env_path = state.config.project_data_dir(&project.name).join(".env");
+    let content = tokio::fs::read_to_string(&env_path).await.unwrap_or_default();
+    
+    (StatusCode::OK, content).into_response()
+}
+
+#[derive(Deserialize)]
+pub struct UpdateEnvPayload {
+    pub env_content: String,
+}
+
+/// POST /api/projects/:id/env — Update the .env file and restart the project
+pub async fn update_env(
+    Path(id): Path<String>,
+    State(state): State<AppState>,
+    Json(payload): Json<UpdateEnvPayload>,
+) -> Response {
+    let project = match Project::find_by_id(&state.db, &id).await {
+        Ok(Some(p)) => p,
+        Ok(None) => return api_err(StatusCode::NOT_FOUND, "Project not found"),
+        Err(e) => return api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+    };
+
+    let data_dir = state.config.project_data_dir(&project.name);
+    if let Err(e) = std::fs::create_dir_all(&data_dir) {
+        return api_err(StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create data dir: {}", e));
+    }
+
+    let env_path = data_dir.join(".env");
+    if let Err(e) = tokio::fs::write(&env_path, &payload.env_content).await {
+        return api_err(StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to save .env file: {}", e));
+    }
+
+    // Restart process
+    let _ = runner::kill_process(&id, &state.process_manager).await;
+    match runner::spawn_process(&state.config, &project, &state.process_manager).await {
+        Ok(pid) => {
+            let _ = Project::update_status(&state.db, &id, ProjectStatus::Running, Some(pid as i64)).await;
+            (StatusCode::OK, Json(serde_json::json!({"updated": true, "restarted": true}))).into_response()
+        }
+        Err(e) => api_err(StatusCode::INTERNAL_SERVER_ERROR, format!("Saved but restart failed: {}", e)),
+    }
+}
+
 // ─────────────────────────────────────────────
 // Internal helpers
 // ─────────────────────────────────────────────
@@ -337,11 +434,12 @@ pub async fn ensure_admin_user(db: &SqlitePool) -> anyhow::Result<String> {
 
     let user = crate::db::models::User::new("admin", "admin123");
     sqlx::query(
-        "INSERT OR IGNORE INTO users (id, username, password_hash, created_at) VALUES (?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO users (id, username, password_hash, api_key, created_at) VALUES (?, ?, ?, ?, ?)",
     )
     .bind(&user.id)
     .bind(&user.username)
     .bind(&user.password_hash)
+    .bind(&user.api_key)
     .bind(user.created_at)
     .execute(db)
     .await?;

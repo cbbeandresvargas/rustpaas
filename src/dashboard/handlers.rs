@@ -1,8 +1,10 @@
 use axum::{
-    extract::{Path, State},
+    extract::{Path, State, Query},
     http::StatusCode,
     response::{Html, IntoResponse, Response},
 };
+use axum_extra::extract::cookie::{Cookie, CookieJar};
+use serde::Deserialize;
 use askama::Template;
 use tracing::error;
 
@@ -117,7 +119,7 @@ pub async fn project_detail(
 
     // List objects in the first bucket (if any)
     let objects = if let Some(bucket) = buckets.first() {
-        s3::list_bucket_objects(&state.config, &bucket.name).unwrap_or_default()
+        s3::list_bucket_objects(&state.config, &project.id, &bucket.name).unwrap_or_default()
     } else {
         vec![]
     };
@@ -125,10 +127,26 @@ pub async fn project_detail(
     // Read last 100 lines of the log file
     let log_lines = read_log_tail(&state.config.project_log_path(&project.name), 100);
 
+    // Read S3 secret or generate if not exists
+    let s3_port = (project.port as u16) + 10000;
+    let data_dir = state.config.project_data_dir(&project.name);
+    let s3_secret_path = data_dir.join(".s3_secret");
+    let s3_secret_key = if s3_secret_path.exists() {
+        std::fs::read_to_string(&s3_secret_path).unwrap_or_else(|_| uuid::Uuid::new_v4().to_string())
+    } else {
+        let new_secret = uuid::Uuid::new_v4().to_string();
+        let _ = std::fs::create_dir_all(&data_dir);
+        let _ = std::fs::write(&s3_secret_path, &new_secret);
+        new_secret
+    };
+
     render(ProjectDetailTemplate {
-        project,
+        project: project.clone(),
         buckets,
         objects,
+        s3_port,
+        s3_access_key: project.id.clone(),
+        s3_secret_key,
         log_lines,
         user: Some(user),
         app_name,
@@ -152,6 +170,22 @@ pub async fn project_logs(
     let log_path = state.config.project_log_path(&project.name);
     let lines = read_log_tail(&log_path, 100);
     (StatusCode::OK, lines.join("\n")).into_response()
+}
+
+#[derive(Deserialize)]
+pub struct LangQuery {
+    pub lang: String,
+    pub next: Option<String>,
+}
+
+/// GET /set_lang?lang=es&next=/
+pub async fn set_lang(jar: CookieJar, Query(q): Query<LangQuery>) -> (CookieJar, axum::response::Redirect) {
+    let cookie = Cookie::build(("lang", q.lang.clone()))
+        .path("/")
+        .same_site(axum_extra::extract::cookie::SameSite::Lax)
+        .build();
+    let redirect_url = q.next.unwrap_or_else(|| "/".to_string());
+    (jar.add(cookie), axum::response::Redirect::to(&redirect_url))
 }
 
 // ─────────────────────────────────────────────

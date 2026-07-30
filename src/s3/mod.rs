@@ -3,33 +3,47 @@ use tracing::info;
 
 use crate::config::Config;
 
-/// Starts the embedded S3 server using s3s-fs.
+/// Starts the embedded S3 server using s3s-fs for a specific project.
 ///
 /// Returns a handle that keeps the server alive. Drop it to stop the server.
-pub async fn start_server(config: &Config) -> Result<S3Handle> {
+pub async fn start_project_s3(
+    config: &Config,
+    project_id: &str,
+    s3_port: u16,
+    access_key: &str,
+    secret_key: &str,
+) -> Result<S3Handle> {
     use s3s_fs::FileSystem;
     use s3s::service::S3ServiceBuilder;
+    use s3s::auth::SimpleAuth;
 
-    let storage_dir = config.storage_dir();
+    // Isolated storage directory per project
+    let storage_dir = config.storage_dir().join(project_id);
     std::fs::create_dir_all(&storage_dir)
         .context("Failed to create S3 storage directory")?;
 
-    info!("🗂️  S3 storage root: {}", storage_dir.display());
+    info!("🗂️  S3 storage root for {}: {}", project_id, storage_dir.display());
 
     // FileSystem-backed S3 service
     let fs = FileSystem::new(&storage_dir)
         .map_err(|e| anyhow::anyhow!("Failed to initialize S3 FileSystem: {:?}", e))?;
 
-    // Build the S3 service and convert to SharedS3Service (which is Clone)
-    let service = S3ServiceBuilder::new(fs).build().into_shared();
+    // Setup SimpleAuth with unique credentials
+    let mut auth = SimpleAuth::new();
+    auth.register(access_key.to_string(), secret_key.to_string().into());
+
+    // Build the S3 service and convert to SharedS3Service
+    let mut service_builder = S3ServiceBuilder::new(fs);
+    service_builder.set_auth(auth);
+    let service = service_builder.build().into_shared();
 
     // Bind to configured port
-    let addr = format!("0.0.0.0:{}", config.s3_port);
+    let addr = format!("127.0.0.1:{}", s3_port);
     let listener = tokio::net::TcpListener::bind(&addr)
         .await
         .with_context(|| format!("Failed to bind S3 server on {}", addr))?;
 
-    info!("🪣  S3 server listening on http://{}", addr);
+    info!("🪣  S3 server for {} listening on http://{}", project_id, addr);
 
     // Spawn the S3 server in the background using hyper
     let handle = tokio::spawn(async move {
@@ -56,6 +70,7 @@ pub async fn start_server(config: &Config) -> Result<S3Handle> {
 }
 
 /// Handle to the S3 background task. Drop to stop (best-effort).
+#[derive(Debug)]
 pub struct S3Handle {
     _task: tokio::task::JoinHandle<()>,
 }
@@ -67,17 +82,17 @@ impl Drop for S3Handle {
 }
 
 /// Creates a new S3 bucket (directory) for a project.
-pub fn create_bucket(config: &Config, bucket_name: &str) -> Result<()> {
-    let bucket_path = config.storage_dir().join(bucket_name);
+pub fn create_bucket(config: &Config, project_id: &str, bucket_name: &str) -> Result<()> {
+    let bucket_path = config.storage_dir().join(project_id).join(bucket_name);
     std::fs::create_dir_all(&bucket_path)
         .with_context(|| format!("Failed to create bucket directory: {}", bucket_path.display()))?;
-    info!("🪣  Created bucket: {}", bucket_name);
+    info!("🪣  Created bucket {} for project {}", bucket_name, project_id);
     Ok(())
 }
 
 /// Lists all objects (files) in a bucket directory.
-pub fn list_bucket_objects(config: &Config, bucket_name: &str) -> Result<Vec<S3Object>> {
-    let bucket_path = config.storage_dir().join(bucket_name);
+pub fn list_bucket_objects(config: &Config, project_id: &str, bucket_name: &str) -> Result<Vec<S3Object>> {
+    let bucket_path = config.storage_dir().join(project_id).join(bucket_name);
     let mut objects = Vec::new();
 
     if !bucket_path.exists() {
@@ -107,12 +122,12 @@ fn collect_objects(base: &std::path::Path, dir: &std::path::Path, out: &mut Vec<
 }
 
 /// Deletes a bucket and all its contents.
-pub fn delete_bucket(config: &Config, bucket_name: &str) -> Result<()> {
-    let bucket_path = config.storage_dir().join(bucket_name);
+pub fn delete_bucket(config: &Config, project_id: &str, bucket_name: &str) -> Result<()> {
+    let bucket_path = config.storage_dir().join(project_id).join(bucket_name);
     if bucket_path.exists() {
         std::fs::remove_dir_all(&bucket_path)
             .with_context(|| format!("Failed to delete bucket: {}", bucket_name))?;
-        info!("🗑️  Deleted bucket: {}", bucket_name);
+        info!("🗑️  Deleted bucket {} for project {}", bucket_name, project_id);
     }
     Ok(())
 }
