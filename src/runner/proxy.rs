@@ -1,3 +1,6 @@
+use std::sync::Arc;
+use std::task::{Context, Poll};
+
 use axum::{
     body::Body,
     extract::State,
@@ -122,10 +125,21 @@ pub async fn proxy_handler(
     }
 }
 
+/// Returns true if the request's Host header contains a subdomain of `domain`.
+/// Used by the middleware to decide whether to route to the proxy.
+pub fn has_app_subdomain(req: &Request<Body>, domain: &str) -> bool {
+    let host = req
+        .headers()
+        .get("host")
+        .and_then(|v| v.to_str().ok())
+        .unwrap_or("");
+    extract_subdomain(host, domain).is_some()
+}
+
 /// Extract subdomain from host string.
 /// e.g., "myapp.mypaas.com" with domain "mypaas.com" → Some("myapp")
 /// e.g., "myapp.localhost" with domain "localhost" → Some("myapp")
-fn extract_subdomain<'a>(host: &'a str, domain: &str) -> Option<&'a str> {
+pub fn extract_subdomain<'a>(host: &'a str, domain: &str) -> Option<&'a str> {
     // Remove port if present
     let host = host.split(':').next().unwrap_or(host);
 

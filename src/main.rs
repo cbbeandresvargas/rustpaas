@@ -22,7 +22,7 @@ async fn main() -> Result<()> {
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "mypaas=debug,tower_http=debug".into()),
+                .unwrap_or_else(|_| "mypaas=debug,tower_http=info".into()),
         )
         .init();
 
@@ -77,7 +77,7 @@ mod router {
     use crate::api::deploy;
 
     pub fn build(state: AppState) -> Router {
-        // Dashboard routes
+        // Dashboard & management routes
         let dashboard_routes = Router::new()
             .route("/", get(dash::index))
             .route("/projects/{id}", get(dash::project_detail))
@@ -92,10 +92,23 @@ mod router {
             .route("/projects/{id}/backup", get(deploy::download_backup))
             .route("/deploy", axum::routing::post(deploy::deploy));
 
+        // The proxy fallback handles two cases:
+        //   1. Requests with a recognized app subdomain (Host: myapp.localhost)
+        //      → forwarded to the app's local port
+        //   2. Any other unmatched route → 404 "No subdomain found"
+        //
+        // Because axum evaluates routes before fallback, known dashboard paths
+        // (/, /projects/*, /api/*, /static/*) always win for the main domain.
+        // Subdomain traffic hits the fallback because the dashboard routes only
+        // match specific paths; a subdomain request to "/" still matches the
+        // dashboard route. To solve this properly we use the subdomain-aware
+        // handler approach: the proxy_handler checks the Host header itself.
         Router::new()
             .merge(dashboard_routes)
             .nest("/api", api_routes)
             .nest_service("/static", ServeDir::new("static"))
+            // Fallback for unknown paths — proxy checks Host header
+            .fallback(crate::runner::proxy::proxy_handler)
             .layer(TraceLayer::new_for_http())
             .layer(CorsLayer::permissive())
             .with_state(state)

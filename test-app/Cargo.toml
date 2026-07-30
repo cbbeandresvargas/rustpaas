@@ -1,0 +1,6 @@
+[package]
+name = "hello-app"
+version = "0.1.0"
+edition = "2021"
+
+# No external dependencies — only stdlib, for minimal binary size

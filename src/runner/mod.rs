@@ -97,7 +97,7 @@ pub async fn spawn_process(
     let s3_endpoint = format!("http://localhost:{}", config.s3_port);
     let bucket_name = format!("bucket-{}", project.name);
 
-    let mut child = Command::new(&binary_path)
+    let child = Command::new(&binary_path)
         .env("DATABASE_URL", &db_url)
         .env("S3_ENDPOINT", &s3_endpoint)
         .env("S3_BUCKET", &bucket_name)
