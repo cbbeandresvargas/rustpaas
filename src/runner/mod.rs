@@ -58,6 +58,11 @@ impl ProcessManager {
     pub fn idle_seconds(&self, project_id: &str) -> Option<u64> {
         self.last_activity.get(project_id).map(|t| t.elapsed().as_secs())
     }
+
+    /// List all currently active project IDs
+    pub fn active_projects(&self) -> Vec<String> {
+        self.processes.keys().cloned().collect()
+    }
 }
 
 // ─────────────────────────────────────────────

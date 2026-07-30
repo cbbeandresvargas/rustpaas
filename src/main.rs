@@ -51,7 +51,41 @@ async fn main() -> Result<()> {
     };
 
     // Build Axum router
-    let app = router::build(state);
+    let app = router::build(state.clone());
+
+    // Auto-suspend background task (Scale-to-zero)
+    let pm = state.process_manager.clone();
+    let db = state.db.clone();
+    let timeout = config.suspend_timeout_mins * 60;
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(60));
+        loop {
+            interval.tick().await;
+            let mut to_kill = vec![];
+            
+            {
+                let mgr = pm.lock().await;
+                for pid in mgr.active_projects() {
+                    if let Some(idle) = mgr.idle_seconds(&pid) {
+                        if idle > timeout {
+                            to_kill.push(pid);
+                        }
+                    }
+                }
+            }
+
+            for pid in to_kill {
+                tracing::info!("♻️ Auto-suspending project {} due to inactivity", pid);
+                let _ = runner::kill_process(&pid, &pm).await;
+                let _ = db::models::Project::update_status(
+                    &db, 
+                    &pid, 
+                    db::models::ProjectStatus::Suspended, 
+                    None
+                ).await;
+            }
+        }
+    });
 
     // Start main HTTP server
     let addr = format!("{}:{}", config.host, config.port);
