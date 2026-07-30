@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ project.name }} — RustPaaS</title>
+    <meta name="description" content="Detalle del proyecto {{ project.name }}: estado, logs, buckets S3 y backup de base de datos.">
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    {% include "components/navbar.html" %}
+
+    <main class="container">
+        <!-- Header -->
+        <div class="page-header">
+            <div>
+                <a href="/" class="back-link">← Volver</a>
+                <h1>{{ project.name }}</h1>
+                <span class="badge badge-{{ project.status }}">{{ project.status }}</span>
+                <code class="subdomain-pill">:{{ project.port }}</code>
+            </div>
+            <div class="action-group">
+                <button class="btn btn-warning" onclick="restartProject('{{ project.id }}')" id="btn-restart">
+                    ↺ Reiniciar
+                </button>
+                <button class="btn btn-danger" onclick="stopProject('{{ project.id }}')" id="btn-stop">
+                    ⏹ Detener
+                </button>
+                <a href="/api/projects/{{ project.id }}/backup" class="btn btn-secondary" id="btn-backup">
+                    💾 Descargar Backup (.db)
+                </a>
+            </div>
+        </div>
+
+        <div class="grid-2col">
+            <!-- Info card -->
+            <div class="card">
+                <h2 class="card-title">Información</h2>
+                <dl class="info-list">
+                    <dt>ID</dt>
+                    <dd><code>{{ project.id }}</code></dd>
+                    <dt>Subdominio</dt>
+                    <dd><code>{{ project.subdomain }}</code></dd>
+                    <dt>Puerto local</dt>
+                    <dd><code>:{{ project.port }}</code></dd>
+                    <dt>PID del proceso</dt>
+                    <dd>
+                        {% match project.pid %}
+                        {% when Some with (pid) %}
+                            <code>{{ pid }}</code>
+                        {% when None %}
+                            <span class="text-muted">—</span>
+                        {% endmatch %}
+                    </dd>
+                    <dt>Creado</dt>
+                    <dd class="text-muted">{{ project.created_at }}</dd>
+                    <dt>Actualizado</dt>
+                    <dd class="text-muted">{{ project.updated_at }}</dd>
+                </dl>
+                <div class="env-block">
+                    <h3>Variables de entorno inyectadas</h3>
+                    <pre class="code-block">DATABASE_URL=sqlite:///var/lib/mypaas/apps/{{ project.name }}/data/app.db
+S3_ENDPOINT=http://localhost:9000
+S3_BUCKET=bucket-{{ project.name }}
+PORT={{ project.port }}
+APP_NAME={{ project.name }}</pre>
+                </div>
+            </div>
+
+            <!-- Buckets card -->
+            <div class="card">
+                <h2 class="card-title">Buckets S3 ({{ buckets.len() }})</h2>
+                {% if buckets.is_empty() %}
+                    <p class="text-muted">Sin buckets aún.</p>
+                {% else %}
+                    {% for bucket in buckets %}
+                    <div class="bucket-header">
+                        <span>🪣 <strong>{{ bucket.name }}</strong></span>
+                    </div>
+                    {% endfor %}
+
+                    {% if objects.is_empty() %}
+                    <p class="text-muted" style="margin-top: 1rem;">El bucket está vacío.</p>
+                    {% else %}
+                    <h3 class="section-subtitle">Objetos</h3>
+                    <ul class="object-list">
+                        {% for obj in objects %}
+                        <li class="object-item">
+                            <span class="object-key">📄 {{ obj.key }}</span>
+                            <span class="object-size text-muted">{{ obj.size }} bytes</span>
+                        </li>
+                        {% endfor %}
+                    </ul>
+                    {% endif %}
+                {% endif %}
+            </div>
+        </div>
+
+        <!-- Logs card -->
+        <div class="card" style="margin-top: 1.5rem;">
+            <div class="card-header-row">
+                <h2 class="card-title" style="margin: 0;">Logs en vivo</h2>
+                <div style="display: flex; gap: 0.5rem; align-items: center;">
+                    <span class="pulse-dot" id="log-status-dot"></span>
+                    <span class="text-muted" id="log-status-text">Conectando...</span>
+                    <button class="btn btn-sm btn-secondary" onclick="toggleAutoScroll()" id="btn-autoscroll">
+                        Auto-scroll: ON
+                    </button>
+                </div>
+            </div>
+            <pre class="log-viewer" id="log-viewer">{% for line in log_lines %}{{ line }}
+{% endfor %}</pre>
+        </div>
+    </main>
+
+    <script>
+        window.MYPAAS_PROJECT_ID = "{{ project.id }}";
+    </script>
+    <script src="/static/app.js"></script>
+</body>
+</html>

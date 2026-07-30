@@ -1,0 +1,102 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustPaaS — Dashboard</title>
+    <meta name="description" content="Panel de control del PaaS monolítico en Rust. Gestiona tus aplicaciones, buckets S3 y bases de datos.">
+    <link rel="stylesheet" href="/static/styles.css">
+</head>
+<body>
+    {% include "components/navbar.html" %}
+
+    <main class="container">
+        <div class="page-header">
+            <div>
+                <h1>Proyectos</h1>
+                <p class="subtitle">{{ projects.len() }} aplicacion{% if projects.len() != 1 %}es{% endif %} desplegada{% if projects.len() != 1 %}s{% endif %}</p>
+            </div>
+            <a href="#deploy-docs" class="btn btn-primary" id="btn-new-deploy">
+                + Nuevo Deploy
+            </a>
+        </div>
+
+        {% if projects.is_empty() %}
+        <div class="empty-state">
+            <div class="empty-icon">🚀</div>
+            <h2>Sin proyectos aún</h2>
+            <p>Despliega tu primer binario con:</p>
+            <pre class="code-block">curl -X POST http://localhost:3000/api/deploy \
+  -F "name=mi-app" \
+  -F "binary=@./mi-app-linux-x64"</pre>
+        </div>
+        {% else %}
+        <div class="card">
+            <table class="table" id="projects-table">
+                <thead>
+                    <tr>
+                        <th>Nombre</th>
+                        <th>Subdominio</th>
+                        <th>Puerto</th>
+                        <th>Estado</th>
+                        <th>Actualizado</th>
+                        <th>Acciones</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for project in projects %}
+                    <tr id="project-row-{{ project.id }}">
+                        <td>
+                            <a href="/projects/{{ project.id }}" class="project-link">
+                                {{ project.name }}
+                            </a>
+                        </td>
+                        <td>
+                            <code class="subdomain">{{ project.subdomain }}</code>
+                        </td>
+                        <td>
+                            <code>:{{ project.port }}</code>
+                        </td>
+                        <td>
+                            <span class="badge badge-{{ project.status }}">
+                                {{ project.status }}
+                            </span>
+                        </td>
+                        <td class="text-muted">{{ project.updated_at }}</td>
+                        <td class="actions">
+                            <a href="/projects/{{ project.id }}" class="btn btn-sm btn-secondary" title="Ver detalle">
+                                👁
+                            </a>
+                            <button
+                                class="btn btn-sm btn-warning"
+                                onclick="restartProject('{{ project.id }}')"
+                                title="Reiniciar"
+                            >↺</button>
+                            <button
+                                class="btn btn-sm btn-danger"
+                                onclick="stopProject('{{ project.id }}')"
+                                title="Detener"
+                            >⏹</button>
+                        </td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% endif %}
+
+        <div class="card" id="deploy-docs" style="margin-top: 2rem;">
+            <h2 class="card-title">Cómo hacer deploy</h2>
+            <pre class="code-block"># Subir un binario compilado para Linux
+curl -X POST http://localhost:3000/api/deploy \
+  -F "name=mi-app" \
+  -F "binary=@./mi-app-linux-x64"
+
+# Ver todos los proyectos (JSON)
+curl http://localhost:3000/api/projects</pre>
+        </div>
+    </main>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
