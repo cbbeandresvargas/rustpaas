@@ -3,4 +3,15 @@ name = "hello-app"
 version = "0.1.0"
 edition = "2021"
 
-# No external dependencies — only stdlib, for minimal binary size
+[dependencies]
+tokio = { version = "1.0", features = ["full"] }
+axum = { version = "0.7", features = ["multipart"] }
+askama = "0.12"
+askama_axum = "0.4"
+sqlx = { version = "0.7", features = ["sqlite", "runtime-tokio-rustls"] }
+aws-config = "1.0"
+aws-sdk-s3 = "1.0"
+dotenvy = "0.15"
+tracing = "0.1"
+tracing-subscriber = "0.3"
+uuid = { version = "1.0", features = ["v4"] }

@@ -1,0 +1,54 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>RustPaaS Test App</title>
+    <style>
+        body { font-family: system-ui, sans-serif; max-width: 800px; margin: 0 auto; padding: 2rem; }
+        .card { border: 1px solid #ccc; padding: 1rem; border-radius: 8px; margin-bottom: 2rem; }
+        ul { list-style-type: none; padding: 0; }
+        li { padding: 0.5rem 0; border-bottom: 1px solid #eee; }
+        form { display: flex; gap: 1rem; margin-top: 1rem; }
+        input[type="text"] { flex-grow: 1; padding: 0.5rem; }
+        button { padding: 0.5rem 1rem; background: #22c55e; color: white; border: none; border-radius: 4px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h1>🚀 Test App Running on RustPaaS!</h1>
+    
+    <div class="card">
+        <h2>SQLite Database Test</h2>
+        <p>Current Messages in DB:</p>
+        <ul>
+            {% for msg in messages %}
+                <li><strong>#{{ msg.id }}</strong>: {{ msg.content }}</li>
+            {% else %}
+                <li>No messages yet.</li>
+            {% endfor %}
+        </ul>
+        
+        <form action="/message" method="post" enctype="multipart/form-data">
+            <input type="text" name="content" placeholder="Type a message..." required>
+            <button type="submit">Save to DB</button>
+        </form>
+    </div>
+
+    <div class="card">
+        <h2>S3 Storage Test</h2>
+        <p>Files in isolated Bucket:</p>
+        <ul>
+            {% for file in files %}
+                <li>📄 {{ file }}</li>
+            {% else %}
+                <li>No files uploaded yet.</li>
+            {% endfor %}
+        </ul>
+        
+        <form action="/upload" method="post" enctype="multipart/form-data">
+            <input type="file" name="file" required>
+            <button type="submit">Upload to S3</button>
+        </form>
+    </div>
+</body>
+</html>
