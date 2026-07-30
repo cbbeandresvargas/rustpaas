@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>{{ project.name }} — RustPaaS</title>
+    <title>{{ project.name }} — {{ app_name }}</title>
     <meta name="description" content="Detalle del proyecto {{ project.name }}: estado, logs, buckets S3 y backup de base de datos.">
     <link rel="stylesheet" href="/static/styles.css">
 </head>
@@ -35,13 +35,13 @@
         <div class="grid-2col">
             <!-- Info card -->
             <div class="card">
-                <h2 class="card-title">Información</h2>
+                <h2 class="card-title">{{ t.detail_title }}</h2>
                 <dl class="info-list">
                     <dt>ID</dt>
                     <dd><code>{{ project.id }}</code></dd>
-                    <dt>Subdominio</dt>
+                    <dt>{{ t.detail_subdomain }}</dt>
                     <dd><code>{{ project.subdomain }}</code></dd>
-                    <dt>Puerto local</dt>
+                    <dt>{{ t.detail_port }}</dt>
                     <dd><code>:{{ project.port }}</code></dd>
                     <dt>PID del proceso</dt>
                     <dd>
@@ -54,7 +54,7 @@
                     </dd>
                     <dt>Creado</dt>
                     <dd class="text-muted">{{ project.created_at }}</dd>
-                    <dt>Actualizado</dt>
+                    <dt>{{ t.detail_updated }}</dt>
                     <dd class="text-muted">{{ project.updated_at }}</dd>
                 </dl>
                 <div class="env-block">
@@ -69,7 +69,7 @@ APP_NAME={{ project.name }}</pre>
 
             <!-- Buckets card -->
             <div class="card">
-                <h2 class="card-title">Buckets S3 ({{ buckets.len() }})</h2>
+                <h2 class="card-title">{{ t.detail_buckets }} ({{ buckets.len() }})</h2>
                 {% if buckets.is_empty() %}
                     <p class="text-muted">Sin buckets aún.</p>
                 {% else %}
@@ -99,7 +99,7 @@ APP_NAME={{ project.name }}</pre>
         <!-- Logs card -->
         <div class="card" style="margin-top: 1.5rem;">
             <div class="card-header-row">
-                <h2 class="card-title" style="margin: 0;">Logs en vivo</h2>
+                <h2 class="card-title" style="margin: 0;">{{ t.detail_logs }}</h2>
                 <div style="display: flex; gap: 0.5rem; align-items: center;">
                     <span class="pulse-dot" id="log-status-dot"></span>
                     <span class="text-muted" id="log-status-text">Conectando...</span>

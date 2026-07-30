@@ -2,19 +2,19 @@
     <div class="navbar-inner">
         <a href="/" class="navbar-brand">
             <span class="brand-icon">🦀</span>
-            <span class="brand-name">RustPaaS</span>
+            <span class="brand-name">{{ app_name }}</span>
             <span class="brand-version">v{{ paas_version }}</span>
         </a>
         <div class="navbar-links">
-            <a href="/docs" class="nav-link">Documentación</a>
+            <a href="/docs" class="nav-link">{{ t.nav_docs }}</a>
             {% if let Some(u) = user %}
-                <a href="/dashboard" class="nav-link">Dashboard</a>
+                <a href="/dashboard" class="nav-link">{{ t.nav_dashboard }}</a>
                 <span style="color: var(--text-muted); margin-left: 1rem;">@{{ u.username }}</span>
                 <form action="/logout" method="POST" style="display:inline; margin-left: 1rem;">
-                    <button type="submit" class="btn btn-sm btn-secondary">Salir</button>
+                    <button type="submit" class="btn btn-sm btn-secondary">{{ t.nav_logout }}</button>
                 </form>
             {% else %}
-                <a href="/login" class="btn btn-sm btn-primary" style="margin-left: 1rem;">Iniciar Sesión</a>
+                <a href="/login" class="btn btn-sm btn-primary" style="margin-left: 1rem;">{{ t.nav_login }}</a>
             {% endif %}
         </div>
     </div>

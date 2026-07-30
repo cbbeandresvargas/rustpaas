@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>RustPaaS — Tu Nube Personal</title>
+    <title>{{ app_name }} — Tu Nube Personal</title>
     <link rel="stylesheet" href="/static/styles.css">
     <style>
         .hero {
@@ -62,33 +62,32 @@
 
     <main class="container">
         <section class="hero">
-            <h1>🦀 RustPaaS</h1>
+            <h1>🦀 {{ app_name }}</h1>
             <p>
-                Tu Plataforma como Servicio personal, minimalista y ultrarrápida. 
-                Despliega tus aplicaciones, usa almacenamiento S3 integrado y bases de datos SQLite al instante.
+                {{ t.land_subtitle }}
             </p>
             <div class="hero-buttons">
                 {% if user.is_some() %}
-                    <a href="/dashboard" class="btn btn-primary" style="font-size: 1.1rem; padding: 0.75rem 1.5rem;">Ir al Dashboard</a>
+                    <a href="/dashboard" class="btn btn-primary" style="font-size: 1.1rem; padding: 0.75rem 1.5rem;">{{ t.land_btn_dashboard }}</a>
                 {% else %}
-                    <a href="/login" class="btn btn-primary" style="font-size: 1.1rem; padding: 0.75rem 1.5rem;">Acceder</a>
+                    <a href="/login" class="btn btn-primary" style="font-size: 1.1rem; padding: 0.75rem 1.5rem;">{{ t.land_btn_login }}</a>
                 {% endif %}
-                <a href="/docs" class="btn btn-secondary" style="font-size: 1.1rem; padding: 0.75rem 1.5rem;">Leer Documentación</a>
+                <a href="/docs" class="btn btn-secondary" style="font-size: 1.1rem; padding: 0.75rem 1.5rem;">{{ t.land_btn_docs }}</a>
             </div>
         </section>
 
         <section class="features">
             <div class="feature-card">
-                <h3>🚀 Scale-to-Zero</h3>
-                <p>Las aplicaciones sin tráfico se suspenden automáticamente liberando memoria, y se despiertan instantáneamente cuando llega una petición HTTP.</p>
+                <h3>{{ t.land_feat1_title }}</h3>
+                <p>{{ t.land_feat1_desc }}</p>
             </div>
             <div class="feature-card">
-                <h3>🪣 Motor S3 Nativo</h3>
-                <p>No necesitas AWS. Cada proyecto cuenta con un bucket S3 dedicado alojado directamente en el mismo servidor de RustPaaS.</p>
+                <h3>{{ t.land_feat2_title }}</h3>
+                <p>{{ t.land_feat2_desc }}</p>
             </div>
             <div class="feature-card">
-                <h3>🔄 Integración CI/CD</h3>
-                <p>Haz push a GitHub y observa cómo tu código se compila y se despliega mágicamente en menos de un minuto usando nuestra plantilla de Actions.</p>
+                <h3>{{ t.land_feat3_title }}</h3>
+                <p>{{ t.land_feat3_desc }}</p>
             </div>
         </section>
     </main>

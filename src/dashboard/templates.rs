@@ -2,6 +2,7 @@ use askama::Template;
 
 use crate::db::models::{Bucket, Project, User};
 use crate::s3::S3Object;
+use super::i18n::Dict;
 
 // ─────────────────────────────────────────────
 // Index — List of all projects
@@ -12,6 +13,8 @@ use crate::s3::S3Object;
 pub struct IndexTemplate {
     pub projects: Vec<Project>,
     pub user: Option<User>,
+    pub app_name: String,
+    pub t: &'static Dict,
     pub paas_version: &'static str,
 }
 
@@ -27,6 +30,8 @@ pub struct ProjectDetailTemplate {
     pub objects: Vec<S3Object>,
     pub log_lines: Vec<String>,
     pub user: Option<User>,
+    pub app_name: String,
+    pub t: &'static Dict,
     pub paas_version: &'static str,
 }
 
@@ -40,6 +45,8 @@ pub struct ErrorTemplate {
     pub code: u16,
     pub message: String,
     pub user: Option<User>,
+    pub app_name: String,
+    pub t: &'static Dict,
     pub paas_version: &'static str,
 }
 
@@ -51,6 +58,8 @@ pub struct ErrorTemplate {
 #[template(path = "landing.html")]
 pub struct LandingTemplate {
     pub user: Option<User>,
+    pub app_name: String,
+    pub t: &'static Dict,
     pub paas_version: &'static str,
 }
 
@@ -58,6 +67,8 @@ pub struct LandingTemplate {
 #[template(path = "docs.html")]
 pub struct DocsTemplate {
     pub user: Option<User>,
+    pub app_name: String,
+    pub t: &'static Dict,
     pub paas_version: &'static str,
 }
 
@@ -69,4 +80,7 @@ pub struct DocsTemplate {
 #[template(path = "login.html")]
 pub struct LoginTemplate {
     pub error: Option<String>,
+    pub app_name: String,
+    pub t: &'static Dict,
+    pub paas_version: &'static str,
 }

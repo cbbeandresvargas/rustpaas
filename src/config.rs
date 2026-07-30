@@ -4,6 +4,8 @@ use anyhow::{Context, Result};
 /// Global configuration loaded from environment variables
 #[derive(Debug, Clone)]
 pub struct Config {
+    /// Name of the PaaS instance (configurable via APP_NAME)
+    pub app_name: String,
     /// Root directory for all PaaS data (apps, DBs, S3 buckets)
     pub data_dir: PathBuf,
     /// Hostname/IP the PaaS server listens on
@@ -37,6 +39,7 @@ impl Config {
             .unwrap_or(default_data_dir);
 
         Ok(Config {
+            app_name: std::env::var("APP_NAME").unwrap_or_else(|_| "RustPaaS".to_string()),
             data_dir,
             host: std::env::var("MYPAAS_HOST").unwrap_or_else(|_| "0.0.0.0".to_string()),
             port: std::env::var("MYPAAS_PORT")

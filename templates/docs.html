@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Documentación - RustPaaS</title>
+    <title>{{ t.nav_docs }} - {{ app_name }}</title>
     <link rel="stylesheet" href="/static/styles.css">
     <style>
         .docs-container {
@@ -80,8 +80,8 @@
                 </ul>
             </aside>
             <div class="docs-content">
-                <h1 id="intro">Documentación Oficial de RustPaaS</h1>
-                <p>RustPaaS es una plataforma como servicio (PaaS) diseñada para compilar y hospedar aplicaciones web escritas en Rust (o cualquier lenguaje que compile a un binario standalone) de manera eficiente. Todo en un solo archivo binario con 0 dependencias externas pesadas.</p>
+                <h1 id="intro">{{ t.nav_docs }} - {{ app_name }}</h1>
+                <p>{{ app_name }} es una plataforma como servicio (PaaS) diseñada para compilar y hospedar aplicaciones web escritas en Rust (o cualquier lenguaje que compile a un binario standalone) de manera eficiente. Todo en un solo archivo binario con 0 dependencias externas pesadas.</p>
 
                 <hr style="border-color: var(--border-color); margin: 3rem 0;">
 
@@ -90,11 +90,11 @@
                 <pre class="code-block">curl -X POST https://paas.tudominio.com/api/deploy \
   -F "name=mi-app" \
   -F "binary=@./target/release/mi-app"</pre>
-                <p>Al hacer esto, RustPaaS buscará un puerto libre, configurará el subdominio <code>mi-app.paas.tudominio.com</code>, y arrancará el proceso inyectando variables de entorno automáticamente.</p>
+                <p>Al hacer esto, {{ app_name }} buscará un puerto libre, configurará el subdominio <code>mi-app.paas.tudominio.com</code>, y arrancará el proceso inyectando variables de entorno automáticamente.</p>
 
                 <h2 id="github-actions">2. Deploy Automatizado (GitHub Actions)</h2>
-                <p>La mejor manera de usar RustPaaS es mediante CI/CD. Añade este archivo a tu repositorio en <code>.github/workflows/deploy.yml</code>:</p>
-                <pre class="code-block">name: Deploy to RustPaaS
+                <p>La mejor manera de usar {{ app_name }} es mediante CI/CD. Añade este archivo a tu repositorio en <code>.github/workflows/deploy.yml</code>:</p>
+                <pre class="code-block">name: Deploy to {{ app_name }}
 on:
   push:
     branches:
@@ -116,20 +116,20 @@ jobs:
                 <p>Con esto, cada vez que hagas push a la rama <code>main</code>, GitHub Actions compilará tu aplicación y la desplegará en tu servidor en cuestión de segundos.</p>
 
                 <h2 id="s3">3. Almacenamiento S3 Integrado</h2>
-                <p>RustPaaS tiene un motor S3 embebido (basado en s3s). Cuando despliegas una aplicación, se crea automáticamente un bucket para ella. Tu proceso recibe las siguientes variables de entorno que puedes usar con cualquier cliente de S3 (como `aws-sdk-s3` en Rust):</p>
+                <p>{{ app_name }} tiene un motor S3 embebido (basado en s3s). Cuando despliegas una aplicación, se crea automáticamente un bucket para ella. Tu proceso recibe las siguientes variables de entorno que puedes usar con cualquier cliente de S3 (como `aws-sdk-s3` en Rust):</p>
                 <pre class="code-block">S3_ENDPOINT="http://localhost:9000"
 S3_BUCKET="bucket-mi-app"</pre>
                 <p>No se requieren claves de acceso (access key / secret key) porque el motor local confía en las peticiones internas, aunque puedes configurar credenciales en el cliente S3 para que no falle la inicialización (usa cualquier string).</p>
                 <p><strong>Nota:</strong> Puedes subir archivos desde la UI del dashboard, o usando tu propio código dentro de tu aplicación.</p>
 
                 <h2 id="sqlite">4. Bases de Datos & Backups</h2>
-                <p>Para bases de datos transaccionales, recomendamos fuertemente usar <strong>SQLite</strong>. RustPaaS garantiza que tu aplicación correrá en la misma máquina virtual y el mismo sistema de archivos.</p>
+                <p>Para bases de datos transaccionales, recomendamos fuertemente usar <strong>SQLite</strong>. {{ app_name }} garantiza que tu aplicación correrá en la misma máquina virtual y el mismo sistema de archivos.</p>
                 <p>Tu aplicación recibe la variable:</p>
                 <pre class="code-block">DATABASE_URL="sqlite://./mypaas-data/apps/mi-app/data/app.db"</pre>
-                <p>Conéctate a esa ruta usando SQLx o rusqlite. Desde el dashboard, puedes presionar el botón <strong>Descargar Backup (DB)</strong>; RustPaaS hará un volcado seguro <code>VACUUM INTO</code> en vivo sin interrumpir tu aplicación y te enviará el archivo <code>.db</code> para que lo guardes.</p>
+                <p>Conéctate a esa ruta usando SQLx o rusqlite. Desde el dashboard, puedes presionar el botón <strong>Descargar Backup (DB)</strong>; {{ app_name }} hará un volcado seguro <code>VACUUM INTO</code> en vivo sin interrumpir tu aplicación y te enviará el archivo <code>.db</code> para que lo guardes.</p>
 
                 <h2 id="scale-to-zero">5. Scale-to-Zero (Auto-suspend)</h2>
-                <p>Para maximizar la cantidad de aplicaciones que puedes hostear en un VPS pequeño (ej. 1GB de RAM), RustPaaS monitorea el tráfico.</p>
+                <p>Para maximizar la cantidad de aplicaciones que puedes hostear en un VPS pequeño (ej. 1GB de RAM), {{ app_name }} monitorea el tráfico.</p>
                 <p>Si una aplicación no recibe ninguna petición HTTP en <strong>10 minutos</strong>, el proceso hijo se termina (enviando SIGKILL o SIGTERM). Su estado en el dashboard cambiará a <code>Suspended</code>.</p>
                 <p>En el momento en que alguien visite el subdominio de tu aplicación, el proxy inverso retendrá la petición web, arrancará tu binario nuevamente, esperará a que el puerto responda, y le pasará la petición de manera transparente (tarda ~10ms en una app Rust optimizada).</p>
             </div>

@@ -12,6 +12,7 @@ use tracing::{error, info};
 use crate::api::AppState;
 use crate::db::models::{Session, User};
 use crate::dashboard::templates::LoginTemplate;
+use crate::dashboard::i18n::Lang;
 
 pub const SESSION_COOKIE_NAME: &str = "rustpaas_session";
 
@@ -107,12 +108,18 @@ pub struct LoginPayload {
     pub password: String,
 }
 
-pub async fn login_page() -> Response {
-    let tmpl = LoginTemplate { error: None };
+pub async fn login_page(Lang(t): Lang, State(state): State<AppState>) -> Response {
+    let tmpl = LoginTemplate { 
+        error: None,
+        app_name: state.config.app_name.clone(),
+        t,
+        paas_version: env!("CARGO_PKG_VERSION"),
+    };
     Html(askama::Template::render(&tmpl).unwrap()).into_response()
 }
 
 pub async fn login_post(
+    Lang(t): Lang,
     State(state): State<AppState>,
     jar: CookieJar,
     Form(payload): Form<LoginPayload>,
@@ -147,14 +154,19 @@ pub async fn login_post(
                 return (jar.add(cookie), Redirect::to("/dashboard")).into_response();
             }
         } else {
-            error_msg = Some("Contraseña incorrecta".to_string());
+            error_msg = Some(t.login_err_pass.to_string());
         }
     } else {
-        error_msg = Some("Usuario no encontrado".to_string());
+        error_msg = Some(t.login_err_user.to_string());
     }
 
     // Return to login page with error
-    let tmpl = LoginTemplate { error: error_msg };
+    let tmpl = LoginTemplate { 
+        error: error_msg,
+        app_name: state.config.app_name.clone(),
+        t,
+        paas_version: env!("CARGO_PKG_VERSION"),
+    };
     Html(askama::Template::render(&tmpl).unwrap()).into_response()
 }
 
