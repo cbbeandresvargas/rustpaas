@@ -53,7 +53,8 @@ function updateRowStatus(projectId, status) {
         error:     'Error',
     };
 
-    badge.className = `badge badge-${status}`;
+    const capitalized = status.charAt(0).toUpperCase() + status.slice(1);
+    badge.className = `badge badge-${capitalized}`;
     badge.textContent = labels[status] ?? status;
 }
 
@@ -110,7 +111,7 @@ function startLogPolling(projectId) {
 
     async function fetchLogs() {
         try {
-            const res = await fetch(`/projects/${projectId}/logs`);
+            const res = await fetch(`/dashboard/projects/${projectId}/logs`);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const text = await res.text();
             viewer.textContent = text;
@@ -140,6 +141,7 @@ document.addEventListener('DOMContentLoaded', () => {
     if (projectId) {
         startLogPolling(projectId);
         loadEnv(projectId);
+        startMetricsPolling(projectId);
     }
 });
 
@@ -189,7 +191,105 @@ async function saveEnv(projectId) {
 // Cleanup on page unload
 window.addEventListener('beforeunload', () => {
     if (logPollInterval) clearInterval(logPollInterval);
+    if (metricsPollInterval) clearInterval(metricsPollInterval);
 });
+
+// ─── Rollback ──────────────────────────────────────────────────────────────
+
+async function rollbackDeploy(projectId, deployId) {
+    if (!confirm('¿Revertir a esta versión? El proceso actual será reemplazado.')) return;
+    try {
+        const res = await fetch(`/api/projects/${projectId}/rollback/${deployId}`, { method: 'POST' });
+        const data = await res.json();
+        if (res.ok) {
+            showToast('⏪ Rollback completado', 'success');
+        } else {
+            showToast(`❌ Error: ${data.error}`, 'error');
+        }
+    } catch (e) {
+        showToast(`❌ Error de red: ${e.message}`, 'error');
+    }
+}
+
+// ─── Custom Domain ─────────────────────────────────────────────────────────
+
+async function saveCustomDomain(projectId) {
+    const input = document.getElementById('custom-domain-input');
+    if (!input) return;
+    try {
+        const res = await fetch(`/api/projects/${projectId}/custom_domain`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ domain: input.value.trim() || null }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+            showToast('✅ Dominio guardado', 'success');
+        } else {
+            showToast(`❌ Error: ${data.error}`, 'error');
+        }
+    } catch (e) {
+        showToast(`❌ Error de red: ${e.message}`, 'error');
+    }
+}
+
+// ─── RAM Limit ─────────────────────────────────────────────────────────────
+
+async function saveRamLimit(projectId) {
+    const input = document.getElementById('ram-limit-input');
+    if (!input) return;
+    const val = input.value.trim();
+    const ram_limit_mb = val === '' ? null : parseInt(val, 10);
+    if (val !== '' && (isNaN(ram_limit_mb) || ram_limit_mb < 32)) {
+        showToast('❌ El límite debe ser ≥ 32 MB', 'error');
+        return;
+    }
+    try {
+        const res = await fetch(`/api/projects/${projectId}/limits`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ram_limit_mb }),
+        });
+        const data = await res.json();
+        if (res.ok) {
+            showToast('✅ Límite aplicado y proceso reiniciado', 'success');
+        } else {
+            showToast(`❌ Error: ${data.error}`, 'error');
+        }
+    } catch (e) {
+        showToast(`❌ Error de red: ${e.message}`, 'error');
+    }
+}
+
+// ─── Metrics polling ───────────────────────────────────────────────────────
+
+let metricsPollInterval = null;
+
+function startMetricsPolling(projectId) {
+    async function fetchMetrics() {
+        try {
+            const res = await fetch(`/api/projects/${projectId}/metrics`);
+            if (!res.ok) return;
+            const m = await res.json();
+            const cpu = document.getElementById('metric-cpu');
+            const ram = document.getElementById('metric-ram');
+            const uptime = document.getElementById('metric-uptime');
+            if (cpu) cpu.textContent = `${Math.round(m.cpu_percent)}%`;
+            if (ram) ram.textContent = `${m.ram_mb} MB`;
+            if (uptime) uptime.textContent = formatUptime(m.uptime_secs);
+        } catch (_) {}
+    }
+    fetchMetrics();
+    metricsPollInterval = setInterval(fetchMetrics, 15000);
+}
+
+function formatUptime(secs) {
+    if (secs < 60) return `${secs}s`;
+    if (secs < 3600) return `${Math.floor(secs / 60)}m ${secs % 60}s`;
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    return `${h}h ${m}m`;
+}
 
 // ─── New Project Modal ─────────────────────────────────────────────────────
 

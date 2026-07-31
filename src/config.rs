@@ -102,6 +102,16 @@ impl Config {
         self.apps_dir().join(project_name).join("app.log")
     }
 
+    /// Working directory for bundle deploys (contains extracted assets)
+    pub fn project_workspace_dir(&self, project_name: &str) -> PathBuf {
+        self.apps_dir().join(project_name).join("workspace")
+    }
+
+    /// Directory for deploy history snapshots (binary/bundle archives for rollback)
+    pub fn project_deploys_dir(&self, project_name: &str) -> PathBuf {
+        self.apps_dir().join(project_name).join("deploys")
+    }
+
     /// Create all required directories if they don't exist
     pub fn ensure_dirs(&self) -> Result<()> {
         std::fs::create_dir_all(&self.data_dir)

@@ -399,6 +399,26 @@ code {
 .object-key { color: var(--color-text); font-family: monospace; }
 .object-size { font-family: monospace; }
 
+/* ─── Metrics ─── */
+.metric-box {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    min-width: 80px;
+}
+.metric-label {
+    font-size: 0.75rem;
+    color: var(--color-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+.metric-value {
+    font-size: 1.4rem;
+    font-weight: 700;
+    font-family: monospace;
+    color: var(--color-text);
+}
+
 /* ─── Empty state ─── */
 .empty-state {
     text-align: center;

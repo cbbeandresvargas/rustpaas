@@ -1,6 +1,3 @@
-use std::sync::Arc;
-use std::task::{Context, Poll};
-
 use axum::{
     body::Body,
     extract::State,
@@ -31,22 +28,36 @@ pub async fn proxy_handler(
         .unwrap_or("")
         .to_string();
 
-    // Extract subdomain from host (e.g., "myapp.mypaas.com" → "myapp")
-    let subdomain = match extract_subdomain(&host, &state.config.domain) {
-        Some(s) => s.to_string(),
-        None => {
-            return (StatusCode::NOT_FOUND, "No subdomain found").into_response();
+    // Host without port for custom domain matching
+    let host_clean = host.split(':').next().unwrap_or(&host).to_string();
+
+    // 1. Try custom domain match first
+    let project = match Project::find_by_custom_domain(&state.db, &host_clean).await {
+        Ok(Some(p)) => {
+            debug!("Proxy request matched custom domain: {}", host_clean);
+            p
         }
-    };
-
-    debug!("Proxy request for subdomain: {}", subdomain);
-
-    // Look up the project by subdomain
-    let project = match Project::find_by_subdomain(&state.db, &subdomain).await {
-        Ok(Some(p)) => p,
         Ok(None) => {
-            warn!("No project found for subdomain: {}", subdomain);
-            return (StatusCode::NOT_FOUND, format!("App '{}' not found", subdomain)).into_response();
+            // 2. Fall back to subdomain matching
+            let subdomain = match extract_subdomain(&host, &state.config.domain) {
+                Some(s) => s.to_string(),
+                None => {
+                    return (StatusCode::NOT_FOUND, "No subdomain found").into_response();
+                }
+            };
+
+            debug!("Proxy request for subdomain: {}", subdomain);
+
+            match Project::find_by_subdomain(&state.db, &subdomain).await {
+                Ok(Some(p)) => p,
+                Ok(None) => {
+                    warn!("No project found for subdomain: {}", subdomain);
+                    return (StatusCode::NOT_FOUND, format!("App '{}' not found", subdomain)).into_response();
+                }
+                Err(e) => {
+                    return (StatusCode::INTERNAL_SERVER_ERROR, format!("DB error: {}", e)).into_response();
+                }
+            }
         }
         Err(e) => {
             return (StatusCode::INTERNAL_SERVER_ERROR, format!("DB error: {}", e)).into_response();
@@ -63,7 +74,7 @@ pub async fn proxy_handler(
         if let Err(e) = runner::spawn_process(&state.config, &project, &state.process_manager).await {
             return (
                 StatusCode::SERVICE_UNAVAILABLE,
-                format!("Failed to start app '{}': {}", subdomain, e),
+                format!("Failed to start app '{}': {}", project.name, e),
             )
                 .into_response();
         }
@@ -115,10 +126,10 @@ pub async fn proxy_handler(
             Response::from_parts(res_parts, Body::from(bytes)).into_response()
         }
         Err(e) => {
-            warn!("Proxy error for '{}': {}", subdomain, e);
+            warn!("Proxy error for '{}': {}", project.name, e);
             (
                 StatusCode::BAD_GATEWAY,
-                format!("App '{}' is not responding: {}", subdomain, e),
+                format!("App '{}' is not responding: {}", project.name, e),
             )
                 .into_response()
         }

@@ -47,10 +47,21 @@ async fn main() -> Result<()> {
         config: config.clone(),
         db: db_pool,
         process_manager: runner::ProcessManager::new(),
+        deploy_semaphore: std::sync::Arc::new(tokio::sync::Semaphore::new(1)),
     };
 
     // Build Axum router
     let app = router::build(state.clone());
+
+    // Metrics refresh background task (every 15 seconds)
+    let pm_metrics = state.process_manager.clone();
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(std::time::Duration::from_secs(15));
+        loop {
+            interval.tick().await;
+            runner::refresh_metrics(&pm_metrics).await;
+        }
+    });
 
     // Auto-suspend background task (Scale-to-zero)
     let pm = state.process_manager.clone();
@@ -129,6 +140,12 @@ mod router {
             .route("/projects/{id}/stop", axum::routing::post(deploy::stop_project))
             .route("/projects/{id}/env", get(deploy::get_env).post(deploy::update_env))
             .route("/projects/{id}/backup", get(deploy::download_backup))
+            .route("/projects/{id}/deploys", get(deploy::list_deploys))
+            .route("/projects/{id}/rollback/{deploy_id}", axum::routing::post(deploy::rollback_deploy))
+            .route("/projects/{id}/metrics", get(deploy::get_metrics))
+            .route("/projects/{id}/custom_domain", axum::routing::post(deploy::set_custom_domain))
+            .route("/projects/{id}/limits", axum::routing::put(deploy::set_limits))
+            .route("/caddy-config", get(deploy::caddy_config))
             .route("/deploy", axum::routing::post(deploy::deploy));
 
         // The proxy fallback handles two cases:

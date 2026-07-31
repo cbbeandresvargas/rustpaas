@@ -31,7 +31,7 @@ define_dict! {
     btn_new_project: { es: "Nuevo Proyecto", en: "New Project" },
     modal_new_title: { es: "Subir Nuevo Proyecto", en: "Upload New Project" },
     modal_new_name: { es: "Nombre del Proyecto (minúsculas, sin espacios)", en: "Project Name (lowercase, no spaces)" },
-    modal_new_file: { es: "Archivo Ejecutable (Binario)", en: "Executable File (Binary)" },
+    modal_new_file: { es: "Ejecutable o Bundle (.tar.gz con assets)", en: "Executable or Bundle (.tar.gz with assets)" },
     modal_new_submit: { es: "Subir y Desplegar", en: "Upload and Deploy" },
     modal_new_uploading: { es: "Subiendo...", en: "Uploading..." },
     api_key_title: { es: "Tus Credenciales CLI", en: "Your CLI Credentials" },
@@ -91,6 +91,30 @@ define_dict! {
     detail_logs: { es: "Logs de la Aplicación", en: "Application Logs" },
     detail_log_conn: { es: "Conectando...", en: "Connecting..." },
 
+    // Deploy history & rollback
+    detail_deploy_history: { es: "Historial de Deploys", en: "Deploy History" },
+    detail_rollback_btn: { es: "⏪ Revertir", en: "⏪ Rollback" },
+    detail_no_history: { es: "Sin deploys anteriores.", en: "No previous deploys." },
+    detail_bundle_badge: { es: "bundle", en: "bundle" },
+    detail_binary_badge: { es: "binario", en: "binary" },
+
+    // Metrics
+    detail_metrics_title: { es: "Métricas del Proceso", en: "Process Metrics" },
+    detail_cpu: { es: "CPU", en: "CPU" },
+    detail_ram: { es: "RAM", en: "RAM" },
+    detail_uptime: { es: "Tiempo activo", en: "Uptime" },
+    detail_metrics_idle: { es: "Proceso no activo", en: "Process not running" },
+
+    // Settings
+    detail_settings_title: { es: "Configuración", en: "Settings" },
+    detail_custom_domain_title: { es: "Dominio Personalizado", en: "Custom Domain" },
+    detail_custom_domain_placeholder: { es: "ej. mi-app.com", en: "e.g. my-app.com" },
+    detail_custom_domain_save: { es: "Guardar Dominio", en: "Save Domain" },
+    detail_ram_limit_title: { es: "Límite de RAM (MB)", en: "RAM Limit (MB)" },
+    detail_ram_limit_placeholder: { es: "Sin límite", en: "No limit" },
+    detail_ram_limit_save: { es: "Aplicar Límite", en: "Apply Limit" },
+    detail_ram_limit_hint: { es: "Deja vacío para sin límite. El proceso se reiniciará.", en: "Leave empty for no limit. Process will restart." },
+
     // Landing
     land_subtitle: { 
         es: "Tu Plataforma como Servicio personal, minimalista y ultrarrápida. Despliega tus aplicaciones, usa almacenamiento S3 integrado y bases de datos SQLite al instante.", 
@@ -110,9 +134,46 @@ define_dict! {
         en: "No AWS needed. Each project has a dedicated S3 bucket hosted directly on the same server." 
     },
     land_feat3_title: { es: "🔄 Integración CI/CD", en: "🔄 CI/CD Integration" },
-    land_feat3_desc: { 
-        es: "Haz push a GitHub y observa cómo tu código se compila y se despliega mágicamente en menos de un minuto usando nuestra plantilla de Actions.", 
-        en: "Push to GitHub and watch your code magically build and deploy in under a minute using our Actions template." 
+    land_feat3_desc: {
+        es: "Haz push a GitHub y observa cómo tu código se compila y se despliega mágicamente en menos de un minuto usando nuestra plantilla de Actions.",
+        en: "Push to GitHub and watch your code magically build and deploy in under a minute using our Actions template."
+    },
+    land_feat4_title: { es: "🗄️ SQLite & Backups", en: "🗄️ SQLite & Backups" },
+    land_feat4_desc: {
+        es: "Tu app recibe DATABASE_URL lista para SQLx o rusqlite. Descarga backups en vivo desde el dashboard sin interrumpir el servicio.",
+        en: "Your app receives a ready-to-use DATABASE_URL for SQLx or rusqlite. Download live backups from the dashboard without interrupting the service."
+    },
+    land_feat5_title: { es: "⚙️ Variables de Entorno", en: "⚙️ Environment Variables" },
+    land_feat5_desc: {
+        es: "Edita las variables de entorno de cada proyecto desde el dashboard. Los cambios se aplican al instante reiniciando el proceso.",
+        en: "Edit each project's environment variables from the dashboard. Changes apply instantly by restarting the process."
+    },
+    land_feat6_title: { es: "👤 Multi-usuario & API Key", en: "👤 Multi-user & API Key" },
+    land_feat6_desc: {
+        es: "Registro multi-usuario, sesiones seguras y claves API para automatizar deploys desde tus scripts o pipelines de CI/CD.",
+        en: "Multi-user registration, secure sessions and API keys to automate deploys from your scripts or CI/CD pipelines."
+    },
+    land_features_title: { es: "¿Qué incluye?", en: "What's included?" },
+    land_how_title: { es: "¿Cómo funciona?", en: "How does it work?" },
+    land_step1_title: { es: "Compila tu binario", en: "Compile your binary" },
+    land_step1_desc: {
+        es: "Cualquier app que compile a un binario standalone (Rust, Go, C…) es compatible. Apunta al target de tu servidor.",
+        en: "Any app that compiles to a standalone binary (Rust, Go, C…) is compatible. Target your server's architecture."
+    },
+    land_step2_title: { es: "Haz el deploy", en: "Deploy it" },
+    land_step2_desc: {
+        es: "Sube el binario al API con curl o GitHub Actions. Se asigna un puerto, subdominio y variables de entorno en segundos.",
+        en: "Upload the binary to the API with curl or GitHub Actions. A port, subdomain and env vars are assigned in seconds."
+    },
+    land_step3_title: { es: "Tu app está en línea", en: "Your app is online" },
+    land_step3_desc: {
+        es: "Accede por subdominio. El proxy enruta el tráfico, el S3 aislado está listo y la DB inicializada. Sin pasos adicionales.",
+        en: "Access it by subdomain. The proxy routes traffic, isolated S3 is ready and DB initialized. No extra steps."
+    },
+    land_quickstart_title: { es: "Un comando para empezar", en: "One command to get started" },
+    land_quickstart_sub: {
+        es: "Compila para Linux y envía el binario. El resto es automático.",
+        en: "Compile for Linux and send the binary. The rest is automatic."
     }
 }
 

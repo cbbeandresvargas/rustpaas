@@ -105,18 +105,18 @@
         <div class="card" style="width: 100%; max-width: 500px; margin: 2rem;">
             <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 1.5rem;">
                 <h2 style="margin: 0;">{{ t.modal_new_title }}</h2>
-                <button onclick="closeNewProjectModal()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--text-muted);">&times;</button>
+                <button onclick="closeNewProjectModal()" style="background: none; border: none; font-size: 1.5rem; cursor: pointer; color: var(--color-muted);">&times;</button>
             </div>
             
             <form id="new-project-form" onsubmit="submitNewProject(event)">
                 <div style="margin-bottom: 1rem;">
                     <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">{{ t.modal_new_name }}</label>
-                    <input type="text" id="new-project-name" name="name" required pattern="[a-z0-9\-]+" style="width: 100%; padding: 0.75rem; border-radius: var(--radius); border: 1px solid var(--border-color); background: var(--bg-color); color: var(--text-color);" placeholder="my-awesome-app">
+                    <input type="text" id="new-project-name" name="name" required pattern="[a-z0-9\-]+" style="width: 100%; padding: 0.75rem; border-radius: var(--radius); border: 1px solid var(--color-border); background: var(--color-surface); color: var(--color-text);" placeholder="my-awesome-app">
                 </div>
                 
                 <div style="margin-bottom: 1.5rem;">
                     <label style="display: block; margin-bottom: 0.5rem; font-weight: 500;">{{ t.modal_new_file }}</label>
-                    <input type="file" id="new-project-file" name="binary" required style="width: 100%; padding: 0.75rem; border-radius: var(--radius); border: 1px dashed var(--border-color); background: var(--bg-color); color: var(--text-color);">
+                    <input type="file" id="new-project-file" name="binary" required style="width: 100%; padding: 0.75rem; border-radius: var(--radius); border: 1px dashed var(--color-border); background: var(--color-surface); color: var(--color-text);">
                 </div>
                 
                 <button type="submit" id="btn-submit-project" class="btn btn-primary" style="width: 100%;">{{ t.modal_new_submit }}</button>

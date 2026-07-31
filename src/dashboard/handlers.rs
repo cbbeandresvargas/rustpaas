@@ -9,7 +9,8 @@ use askama::Template;
 use tracing::error;
 
 use crate::api::AppState;
-use crate::db::models::{Bucket, Project, User};
+use crate::db::models::{Bucket, DeployHistory, Project, User};
+use crate::runner;
 use crate::s3;
 use super::auth::{AuthUser, OptionalAuthUser};
 use super::i18n::{Lang, Dict};
@@ -124,8 +125,8 @@ pub async fn project_detail(
         vec![]
     };
 
-    // Read last 100 lines of the log file
-    let log_lines = read_log_tail(&state.config.project_log_path(&project.name), 100);
+    // Read last 100 lines of the log file (across rotated files)
+    let log_lines = runner::read_log_tail_multi(&state.config.project_log_path(&project.name), 100);
 
     // Read S3 secret or generate if not exists
     let s3_port = (project.port as u16) + 10000;
@@ -140,6 +141,17 @@ pub async fn project_detail(
         new_secret
     };
 
+    // Load deploy history for rollback UI
+    let deploy_history = DeployHistory::find_by_project(&state.db, &project.id)
+        .await
+        .unwrap_or_default();
+
+    // Get current metrics snapshot
+    let metrics = {
+        let mgr = state.process_manager.lock().await;
+        mgr.metrics.get(&project.id).cloned()
+    };
+
     render(ProjectDetailTemplate {
         project: project.clone(),
         buckets,
@@ -148,6 +160,8 @@ pub async fn project_detail(
         s3_access_key: project.id.clone(),
         s3_secret_key,
         log_lines,
+        deploy_history,
+        metrics,
         user: Some(user),
         app_name,
         t,
@@ -168,7 +182,7 @@ pub async fn project_logs(
     };
 
     let log_path = state.config.project_log_path(&project.name);
-    let lines = read_log_tail(&log_path, 100);
+    let lines = runner::read_log_tail_multi(&log_path, 100);
     (StatusCode::OK, lines.join("\n")).into_response()
 }
 
@@ -188,20 +202,3 @@ pub async fn set_lang(jar: CookieJar, Query(q): Query<LangQuery>) -> (CookieJar,
     (jar.add(cookie), axum::response::Redirect::to(&redirect_url))
 }
 
-// ─────────────────────────────────────────────
-// Utilities
-// ─────────────────────────────────────────────
-
-/// Read the last `n` lines of a file
-fn read_log_tail(path: &std::path::Path, n: usize) -> Vec<String> {
-    let content = std::fs::read_to_string(path).unwrap_or_default();
-    content
-        .lines()
-        .rev()
-        .take(n)
-        .map(String::from)
-        .collect::<Vec<_>>()
-        .into_iter()
-        .rev()
-        .collect()
-}
