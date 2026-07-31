@@ -192,9 +192,32 @@ pub async fn set_lang(jar: CookieJar, Query(q): Query<LangQuery>) -> (CookieJar,
 // Utilities
 // ─────────────────────────────────────────────
 
-/// Read the last `n` lines of a file
+/// Read the last `n` lines of a file without loading the entire file into memory.
+/// Reads at most 64 KB from the end of the file to find the requested lines.
 fn read_log_tail(path: &std::path::Path, n: usize) -> Vec<String> {
-    let content = std::fs::read_to_string(path).unwrap_or_default();
+    use std::io::{Read, Seek, SeekFrom};
+
+    let mut file = match std::fs::File::open(path) {
+        Ok(f) => f,
+        Err(_) => return vec![],
+    };
+
+    let file_size = match file.seek(SeekFrom::End(0)) {
+        Ok(s) => s,
+        Err(_) => return vec![],
+    };
+
+    let read_from = file_size.saturating_sub(65536);
+    if file.seek(SeekFrom::Start(read_from)).is_err() {
+        return vec![];
+    }
+
+    let mut buf = Vec::new();
+    if file.read_to_end(&mut buf).is_err() {
+        return vec![];
+    }
+
+    let content = String::from_utf8_lossy(&buf);
     content
         .lines()
         .rev()

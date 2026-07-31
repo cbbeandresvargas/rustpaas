@@ -53,7 +53,8 @@ function updateRowStatus(projectId, status) {
         error:     'Error',
     };
 
-    badge.className = `badge badge-${status}`;
+    const capitalized = status.charAt(0).toUpperCase() + status.slice(1);
+    badge.className = `badge badge-${capitalized}`;
     badge.textContent = labels[status] ?? status;
 }
 
@@ -110,7 +111,7 @@ function startLogPolling(projectId) {
 
     async function fetchLogs() {
         try {
-            const res = await fetch(`/projects/${projectId}/logs`);
+            const res = await fetch(`/dashboard/projects/${projectId}/logs`);
             if (!res.ok) throw new Error(`HTTP ${res.status}`);
             const text = await res.text();
             viewer.textContent = text;
