@@ -145,7 +145,9 @@
                     <li><div class="sidebar-group">API & Autenticación</div></li>
                     <li><a href="#auth">Autenticación</a></li>
                     <li><a href="#deploy-manual">Deploy Manual (curl)</a></li>
+                    <li><a href="#bundle-deploy">Bundle Deploy (assets)</a></li>
                     <li><a href="#github-actions">GitHub Actions</a></li>
+                    <li><a href="#rollback">Rollback</a></li>
 
                     <li><div class="sidebar-group">Tu Aplicación</div></li>
                     <li><a href="#env-vars">Variables Inyectadas</a></li>
@@ -198,22 +200,56 @@ curl -X POST https://paas.tudominio.com/api/deploy \
   "message": "Deployed successfully"
 }</pre>
 
+                <!-- ── Bundle Deploy ── -->
+                <h2 id="bundle-deploy">Bundle Deploy (Binario + Assets)</h2>
+                <p>Si tu aplicación necesita archivos adicionales junto al binario — una carpeta <code>public/</code> con HTML/CSS/JS, plantillas, imágenes u otros recursos estáticos — puedes subir todo empaquetado en un <strong>tar.gz</strong>. El sistema lo detecta automáticamente por sus magic bytes y lo extrae antes de arrancar el proceso.</p>
+                <div class="callout">
+                    <strong>Transparente para la API:</strong> El endpoint <code>POST /api/deploy</code> es el mismo. La única diferencia es que envías un <code>.tar.gz</code> en lugar de un binario plano. La detección es automática.
+                </div>
+                <h3>¿Cómo funciona?</h3>
+                <ul>
+                    <li>El bundle se extrae en <code>{data_dir}/apps/{nombre}/workspace/</code></li>
+                    <li>El proceso se arranca desde esa carpeta como directorio de trabajo (CWD)</li>
+                    <li>Tu app puede leer sus assets con rutas relativas: <code>./public/index.html</code></li>
+                    <li>El binario debe llamarse igual que el proyecto (o ser el único ejecutable en el tar)</li>
+                </ul>
+                <h3>Crear el bundle localmente</h3>
+                <pre class="code-block"># Compilar
+cargo build --release --target x86_64-unknown-linux-gnu
+
+# Empacar binario + carpeta public/ en un tar.gz
+tar -czf bundle.tar.gz \
+  -C ./target/x86_64-unknown-linux-gnu/release mi-app \
+  -C ../../.. public/
+
+# Desplegar el bundle (mismo endpoint, misma llamada)
+curl -X POST https://paas.tudominio.com/api/deploy \
+  -H "Authorization: Bearer $PAAS_API_KEY" \
+  -F "name=mi-app" \
+  -F "binary=@bundle.tar.gz"</pre>
+                <div class="callout callout-warn">
+                    <strong>Consejo:</strong> Si tu binario sirve archivos estáticos, asegúrate de que use rutas relativas al CWD o lee la variable <code>APP_NAME</code> para detectar su entorno. El proceso siempre arranca desde la carpeta workspace.
+                </div>
+
                 <!-- ── GitHub Actions ── -->
                 <h2 id="github-actions">Deploy Automatizado (GitHub Actions)</h2>
-                <p>Añade este archivo a tu repositorio en <code>.github/workflows/deploy.yml</code> y configura el secreto <code>PAAS_API_KEY</code> en los settings del repositorio:</p>
+                <p>Añade este archivo a tu repositorio en <code>.github/workflows/deploy.yml</code> y configura el secreto <code>PAAS_API_KEY</code> en los settings del repositorio. El workflow soporta tanto deploy de binario solo como bundle con assets:</p>
                 <pre class="code-block">name: Deploy to {{ app_name }}
 on:
   push:
     branches: [main]
+
+env:
+  PROJECT_NAME: "mi-app"
+  RUSTPAAS_URL: "https://paas.tudominio.com"
+  # BUNDLE_ASSETS: "public"  # Descomenta para bundle deploy con carpeta assets
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-
       - uses: Swatinem/rust-cache@v2
-
       - uses: dtolnay/rust-toolchain@stable
         with:
           targets: x86_64-unknown-linux-gnu
@@ -221,22 +257,37 @@ jobs:
       - name: Build
         run: cargo build --release --target x86_64-unknown-linux-gnu
 
-      - name: Deploy
+      # Opción A: solo el binario
+      - name: Deploy binary
+        if: ${{ "{{" }} !env.BUNDLE_ASSETS {{ "}}" }}
         run: |
-          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
-            -X POST "https://paas.tudominio.com/api/deploy" \
+          curl -sf -X POST "$RUSTPAAS_URL/api/deploy" \
             -H "Authorization: Bearer ${{ "{{" }} secrets.PAAS_API_KEY {{ "}}" }}" \
-            -F "name=mi-app" \
-            -F "binary=@./target/x86_64-unknown-linux-gnu/release/mi-app")
+            -F "name=$PROJECT_NAME" \
+            -F "binary=@./target/x86_64-unknown-linux-gnu/release/$PROJECT_NAME"
 
-          STATUS=$(echo "$RESPONSE" | grep -o "HTTP_STATUS:[0-9]*" | cut -d: -f2)
-          BODY=$(echo "$RESPONSE" | sed -e 's/HTTP_STATUS:[0-9]*//')
+      # Opción B: bundle (binario + assets en tar.gz)
+      - name: Deploy bundle
+        if: ${{ "{{" }} env.BUNDLE_ASSETS {{ "}}" }}
+        run: |
+          tar -czf bundle.tar.gz \
+            -C ./target/x86_64-unknown-linux-gnu/release "$PROJECT_NAME" \
+            $BUNDLE_ASSETS
+          curl -sf -X POST "$RUSTPAAS_URL/api/deploy" \
+            -H "Authorization: Bearer ${{ "{{" }} secrets.PAAS_API_KEY {{ "}}" }}" \
+            -F "name=$PROJECT_NAME" \
+            -F "binary=@bundle.tar.gz"</pre>
 
-          if [ "$STATUS" -eq 201 ]; then
-            echo "Deploy exitoso: $BODY"
-          else
-            echo "Error HTTP $STATUS: $BODY" && exit 1
-          fi</pre>
+                <!-- ── Rollback ── -->
+                <h2 id="rollback">Rollback</h2>
+                <p>Cada vez que haces un redeploy, {{ app_name }} guarda un snapshot del binario (o bundle) anterior. Se mantienen los últimos 3 deploys por proyecto. Puedes revertir desde el dashboard (sección <em>Historial de Deploys</em>) o vía API:</p>
+                <pre class="code-block"># Listar deploys anteriores
+curl -H "Authorization: Bearer $PAAS_API_KEY" \
+  https://paas.tudominio.com/api/projects/{id}/deploys
+
+# Revertir a un deploy específico
+curl -X POST -H "Authorization: Bearer $PAAS_API_KEY" \
+  https://paas.tudominio.com/api/projects/{id}/rollback/{deploy_id}</pre>
 
                 <!-- ── Variables Inyectadas ── -->
                 <h2 id="env-vars">Variables de Entorno Inyectadas</h2>

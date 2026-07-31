@@ -1,53 +1,80 @@
-#name: Deploy to RustPaaS
+name: Deploy to RustPaaS
 
-#on:
-#  push:
-#    branches:
-#      - main
-#  workflow_dispatch:
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
 
-#env:
-#  PROJECT_NAME: "mi-app" # Cambia esto por el nombre de tu app / subdominio
-#  RUSTPAAS_URL: "https://paas.tudominio.com" # Cambia esto por la URL real de tu RustPaaS
+env:
+  PROJECT_NAME: "mi-app"       # Nombre de tu app / subdominio
+  RUSTPAAS_URL: "https://paas.tudominio.com"  # URL de tu servidor RustPaaS
+  # BUNDLE_ASSETS: "public"    # Descomenta si tienes carpeta de assets (ej. "public" o "static")
 
-#jobs:
-#  build-and-deploy:
-#    runs-on: ubuntu-latest
-    
-#    steps:
-#      - name: Checkout Code
-#        uses: actions/checkout@v4
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
 
-#      - name: Cache Rust dependencies
-#        uses: Swatinem/rust-cache@v2
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-#      - name: Install Rust Toolchain
-#        uses: dtolnay/rust-toolchain@stable
-#        with:
-#          targets: x86_64-unknown-linux-gnu
+      - name: Cache Rust dependencies
+        uses: Swatinem/rust-cache@v2
 
-#      - name: Build Release Binary
-#        run: cargo build --release --target x86_64-unknown-linux-gnu
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-gnu
 
-#      - name: Deploy to RustPaaS
-#        run: |
-#          # Encuentra el binario generado. Ajusta la ruta si tu Cargo.toml se llama distinto
-#          BINARY_PATH="./target/x86_64-unknown-linux-gnu/release/${{ env.PROJECT_NAME }}"
-          
-#          echo "Deploying $BINARY_PATH to ${{ env.RUSTPAAS_URL }}..."
-          
-#          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" -X POST "${{ env.RUSTPAAS_URL }}/api/deploy" \
-#            -F "name=${{ env.PROJECT_NAME }}" \
-#            -F "binary=@$BINARY_PATH")
-            
-#          HTTP_STATUS=$(echo "$RESPONSE" | tr -d '\n' | sed -e 's/.*HTTP_STATUS://')
-#          BODY=$(echo "$RESPONSE" | sed -e 's/HTTP_STATUS\:.*//g')
-          
-#          if [ "$HTTP_STATUS" -eq 201 ]; then
-#            echo "✅ Deploy exitoso!"
-#            echo "$BODY"
-#          else
-#            echo "❌ Error en deploy (HTTP $HTTP_STATUS)"
-#            echo "$BODY"
-#            exit 1
-#          fi
+      - name: Build release binary
+        run: cargo build --release --target x86_64-unknown-linux-gnu
+
+      # ── Opción A: Solo el binario (app sin archivos de assets) ────────────
+      - name: Deploy binary
+        if: ${{ !env.BUNDLE_ASSETS }}
+        run: |
+          BINARY_PATH="./target/x86_64-unknown-linux-gnu/release/${{ env.PROJECT_NAME }}"
+
+          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+            -X POST "${{ env.RUSTPAAS_URL }}/api/deploy" \
+            -H "Authorization: Bearer ${{ secrets.PAAS_API_KEY }}" \
+            -F "name=${{ env.PROJECT_NAME }}" \
+            -F "binary=@${BINARY_PATH}")
+
+          STATUS=$(echo "$RESPONSE" | grep -o "HTTP_STATUS:[0-9]*" | cut -d: -f2)
+          BODY=$(echo "$RESPONSE" | sed -e 's/HTTP_STATUS:[0-9]*//')
+
+          if [ "$STATUS" -eq 200 ] || [ "$STATUS" -eq 201 ]; then
+            echo "✅ Deploy exitoso: $BODY"
+          else
+            echo "❌ Error HTTP $STATUS: $BODY" && exit 1
+          fi
+
+      # ── Opción B: Bundle (binario + carpeta de assets en tar.gz) ──────────
+      # Para activar: define BUNDLE_ASSETS en env (ej. "public" o "static dist")
+      # El bundle se detecta automáticamente por magic bytes, no hace falta cambiar nada en el servidor.
+      - name: Deploy bundle (binary + assets)
+        if: ${{ env.BUNDLE_ASSETS }}
+        run: |
+          BINARY_PATH="./target/x86_64-unknown-linux-gnu/release/${{ env.PROJECT_NAME }}"
+
+          # Empacar binario + carpetas de assets en un tar.gz
+          tar -czf bundle.tar.gz \
+            -C ./target/x86_64-unknown-linux-gnu/release "${{ env.PROJECT_NAME }}" \
+            ${{ env.BUNDLE_ASSETS }}
+
+          RESPONSE=$(curl -s -w "\nHTTP_STATUS:%{http_code}" \
+            -X POST "${{ env.RUSTPAAS_URL }}/api/deploy" \
+            -H "Authorization: Bearer ${{ secrets.PAAS_API_KEY }}" \
+            -F "name=${{ env.PROJECT_NAME }}" \
+            -F "binary=@bundle.tar.gz")
+
+          STATUS=$(echo "$RESPONSE" | grep -o "HTTP_STATUS:[0-9]*" | cut -d: -f2)
+          BODY=$(echo "$RESPONSE" | sed -e 's/HTTP_STATUS:[0-9]*//')
+
+          if [ "$STATUS" -eq 200 ] || [ "$STATUS" -eq 201 ]; then
+            echo "✅ Bundle deploy exitoso: $BODY"
+          else
+            echo "❌ Error HTTP $STATUS: $BODY" && exit 1
+          fi
