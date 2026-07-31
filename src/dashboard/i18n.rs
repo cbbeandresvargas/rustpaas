@@ -31,7 +31,7 @@ define_dict! {
     btn_new_project: { es: "Nuevo Proyecto", en: "New Project" },
     modal_new_title: { es: "Subir Nuevo Proyecto", en: "Upload New Project" },
     modal_new_name: { es: "Nombre del Proyecto (minúsculas, sin espacios)", en: "Project Name (lowercase, no spaces)" },
-    modal_new_file: { es: "Archivo Ejecutable (Binario)", en: "Executable File (Binary)" },
+    modal_new_file: { es: "Ejecutable o Bundle (.tar.gz con assets)", en: "Executable or Bundle (.tar.gz with assets)" },
     modal_new_submit: { es: "Subir y Desplegar", en: "Upload and Deploy" },
     modal_new_uploading: { es: "Subiendo...", en: "Uploading..." },
     api_key_title: { es: "Tus Credenciales CLI", en: "Your CLI Credentials" },

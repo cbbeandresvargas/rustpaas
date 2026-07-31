@@ -155,6 +155,12 @@
                     <li><a href="#s3">Almacenamiento S3</a></li>
                     <li><a href="#sqlite">SQLite & Backups</a></li>
                     <li><a href="#scale-to-zero">Scale-to-Zero</a></li>
+
+                    <li><div class="sidebar-group">Configuración</div></li>
+                    <li><a href="#metrics">Métricas del Proceso</a></li>
+                    <li><a href="#custom-domain">Dominio Personalizado</a></li>
+                    <li><a href="#ram-limit">Límite de RAM</a></li>
+                    <li><a href="#caddy">HTTPS con Caddy</a></li>
                 </ul>
             </aside>
 
@@ -416,6 +422,124 @@ let pool = sqlx::SqlitePool::connect(&db_url).await?;</pre>
                     <strong>Consejo:</strong> Para minimizar el tiempo de arranque en frío, asegúrate de que tu app empiece a escuchar en <code>$PORT</code> lo antes posible, idealmente antes de cargar datos o inicializar la base de datos. Una app Axum mínima arranca en menos de 100ms.
                 </div>
                 <p>Esta funcionalidad permite alojar muchas apps en un VPS pequeño: los procesos sin tráfico no consumen memoria.</p>
+
+                <!-- ── Métricas ── -->
+                <h2 id="metrics">Métricas del Proceso</h2>
+                <p>{{ app_name }} recopila métricas en tiempo real de cada proceso en ejecución. Las métricas se actualizan cada <strong>15 segundos</strong> en segundo plano y se muestran en la sección <em>Métricas del Proceso</em> del detalle de cada proyecto en el dashboard.</p>
+                <table class="env-table">
+                    <thead>
+                        <tr><th>Métrica</th><th>Descripción</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td>CPU</td>
+                            <td>Porcentaje de CPU consumido por el proceso en los últimos 15 segundos</td>
+                        </tr>
+                        <tr>
+                            <td>RAM</td>
+                            <td>Memoria residente (RSS) en MB usada actualmente por el proceso</td>
+                        </tr>
+                        <tr>
+                            <td>Uptime</td>
+                            <td>Tiempo transcurrido desde el último arranque del proceso</td>
+                        </tr>
+                    </tbody>
+                </table>
+                <p>También puedes consultar las métricas programáticamente vía API:</p>
+                <pre class="code-block">curl -H "Authorization: Bearer $PAAS_API_KEY" \
+  https://paas.tudominio.com/api/projects/{id}/metrics
+
+# Respuesta:
+# { "cpu_percent": 2.5, "ram_mb": 14, "uptime_secs": 3600 }
+# null si el proceso no está corriendo</pre>
+                <div class="callout">
+                    <strong>Nota:</strong> Si el proceso está <code>Suspended</code> o <code>Stopped</code>, la API devuelve <code>null</code> y el dashboard muestra <em>Proceso no activo</em>. Las métricas solo están disponibles mientras el proceso está en ejecución.
+                </div>
+
+                <!-- ── Dominio Personalizado ── -->
+                <h2 id="custom-domain">Dominio Personalizado</h2>
+                <p>Por defecto, cada proyecto es accesible en <code>{nombre}.{dominio-del-paas}</code>. Puedes mapear cualquier dominio propio para que apunte directamente a tu app sin cambiar el subdominio por defecto.</p>
+                <h3>Configurar desde el dashboard</h3>
+                <p>En la sección <em>Configuración → Dominio Personalizado</em> del detalle de proyecto, escribe tu dominio (sin <code>https://</code>) y pulsa <strong>Guardar Dominio</strong>. El proxy empieza a aceptar peticiones para ese dominio inmediatamente.</p>
+                <h3>Configurar vía API</h3>
+                <pre class="code-block"># Asignar dominio personalizado
+curl -X POST -H "Authorization: Bearer $PAAS_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"domain": "mi-app.com"}' \
+  https://paas.tudominio.com/api/projects/{id}/custom_domain
+
+# Eliminar dominio personalizado
+curl -X POST -H "Authorization: Bearer $PAAS_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"domain": null}' \
+  https://paas.tudominio.com/api/projects/{id}/custom_domain</pre>
+                <div class="callout callout-warn">
+                    <strong>DNS requerido:</strong> Para que el dominio personalizado funcione, necesitas apuntar un registro <code>A</code> (o <code>CNAME</code>) de tu dominio a la IP del servidor donde corre {{ app_name }}. El proxy inverso resuelve el dominio internamente — el certificado TLS depende de tu configuración de Caddy (ver sección <a href="#caddy">HTTPS con Caddy</a>).
+                </div>
+
+                <!-- ── Límite de RAM ── -->
+                <h2 id="ram-limit">Límite de RAM</h2>
+                <p>Puedes imponer un límite máximo de memoria a cada proceso desplegado. Cuando el proceso supera el límite, el kernel termina el proceso y {{ app_name }} actualiza su estado a <code>Error</code>.</p>
+                <h3>Configurar desde el dashboard</h3>
+                <p>En la sección <em>Configuración → Límite de RAM (MB)</em> del detalle de proyecto, introduce el valor en megabytes y pulsa <strong>Aplicar Límite</strong>. El proceso se reiniciará automáticamente con el nuevo límite. Deja el campo vacío para eliminar el límite.</p>
+                <h3>Configurar vía API</h3>
+                <pre class="code-block"># Fijar límite de 256 MB
+curl -X PUT -H "Authorization: Bearer $PAAS_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"ram_limit_mb": 256}' \
+  https://paas.tudominio.com/api/projects/{id}/limits
+
+# Eliminar límite
+curl -X PUT -H "Authorization: Bearer $PAAS_API_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"ram_limit_mb": null}' \
+  https://paas.tudominio.com/api/projects/{id}/limits</pre>
+                <div class="callout callout-warn">
+                    <strong>Solo Linux:</strong> El límite de RAM usa <code>setrlimit(RLIMIT_AS)</code> del kernel Linux. En macOS u otros sistemas operativos la restricción no tiene efecto, pero no genera error. Se recomienda un mínimo de 32 MB para evitar que procesos legítimos sean terminados en el arranque.
+                </div>
+
+                <!-- ── HTTPS / Caddy ── -->
+                <h2 id="caddy">HTTPS con Caddy</h2>
+                <p>{{ app_name }} sirve HTTP en texto plano. Para exponer el dashboard y las apps con HTTPS en producción, el enfoque recomendado es poner <a href="https://caddyserver.com" target="_blank" rel="noopener">Caddy</a> como proxy inverso delante. Caddy obtiene certificados TLS de Let's Encrypt de forma automática.</p>
+                <h3>Generar la configuración de Caddy</h3>
+                <p>El endpoint <code>GET /api/caddy-config</code> genera un <code>Caddyfile</code> listo para usar que incluye todas las apps activas y sus dominios personalizados:</p>
+                <pre class="code-block">curl -H "Authorization: Bearer $PAAS_API_KEY" \
+  https://paas.tudominio.com/api/caddy-config</pre>
+                <h3>Ejemplo de Caddyfile generado</h3>
+                <pre class="code-block"># Wildcard para todos los subdominios de la plataforma
+*.paas.tudominio.com {
+    tls {
+        dns cloudflare {env.CLOUDFLARE_API_TOKEN}
+    }
+    reverse_proxy localhost:3000
+}
+
+# Dashboard principal
+paas.tudominio.com {
+    reverse_proxy localhost:3000
+}
+
+# Dominio personalizado de mi-app
+mi-app.com {
+    reverse_proxy localhost:3000
+}</pre>
+                <div class="callout">
+                    <strong>Wildcard TLS:</strong> Los certificados wildcard (<code>*.dominio.com</code>) requieren un challenge DNS en lugar del challenge HTTP estándar. Caddy soporta esto nativamente con plugins de DNS (Cloudflare, Route53, etc.). Alternativamente, puedes configurar cada subdominio individualmente si prefieres el challenge HTTP.
+                </div>
+                <h3>Instalación básica</h3>
+                <pre class="code-block"># Instalar Caddy (Debian/Ubuntu)
+apt install -y debian-keyring debian-archive-keyring apt-transport-https curl
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg
+curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list
+apt update && apt install caddy
+
+# Guardar el Caddyfile generado
+curl -H "Authorization: Bearer $PAAS_API_KEY" \
+  http://localhost:3000/api/caddy-config > /etc/caddy/Caddyfile
+
+# Recargar Caddy sin downtime
+caddy reload --config /etc/caddy/Caddyfile</pre>
+                <p>Repite el paso de generar y recargar el Caddyfile cada vez que añadas un dominio personalizado a un proyecto.</p>
 
             </div>
         </div>
