@@ -6,54 +6,128 @@
     <title>{{ app_name }} — Tu Nube Personal</title>
     <link rel="stylesheet" href="/static/styles.css">
     <style>
+        /* ── Hero ── */
         .hero {
             text-align: center;
-            padding: 4rem 1rem;
+            padding: 5rem 2rem;
             margin-top: 2rem;
-            background: var(--card-bg);
-            border-radius: 12px;
-            border: 1px solid var(--border-color);
-            box-shadow: 0 10px 30px rgba(0,0,0,0.5);
+            background: var(--color-surface);
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--color-border);
+            box-shadow: var(--shadow);
+            position: relative;
+            overflow: hidden;
+        }
+        .hero::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 50%;
+            transform: translateX(-50%);
+            width: 55%;
+            height: 1px;
+            background: linear-gradient(90deg, transparent, var(--color-primary), transparent);
+        }
+        .hero-badge {
+            display: inline-block;
+            padding: 0.2rem 0.8rem;
+            background: rgba(224,90,0,0.1);
+            border: 1px solid rgba(224,90,0,0.3);
+            border-radius: 999px;
+            font-family: monospace;
+            font-size: 0.75rem;
+            color: var(--color-primary);
+            margin-bottom: 1.5rem;
         }
         .hero h1 {
-            font-size: 3rem;
+            font-size: clamp(2.25rem, 5vw, 3.5rem);
+            letter-spacing: -0.02em;
             margin-bottom: 1rem;
-            color: var(--text-color);
         }
         .hero p {
-            font-size: 1.25rem;
-            color: var(--text-muted);
-            max-width: 600px;
-            margin: 0 auto 2rem auto;
-            line-height: 1.6;
+            font-size: 1.1rem;
+            color: var(--color-muted);
+            max-width: 560px;
+            margin: 0 auto 2rem;
+            line-height: 1.7;
         }
         .hero-buttons {
             display: flex;
             gap: 1rem;
             justify-content: center;
+            flex-wrap: wrap;
         }
+        .btn-lg { font-size: 1rem; padding: 0.7rem 1.6rem; }
+
+        /* ── Section heading ── */
+        .section-heading {
+            text-align: center;
+            margin: 5rem 0 2.5rem;
+        }
+        .section-heading h2 { font-size: 1.6rem; font-weight: 700; }
+        .section-heading p { color: var(--color-muted); margin-top: 0.4rem; font-size: 0.95rem; }
+
+        /* ── Feature grid ── */
         .features {
             display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
-            gap: 2rem;
-            margin-top: 4rem;
+            grid-template-columns: repeat(auto-fit, minmax(270px, 1fr));
+            gap: 1.25rem;
         }
         .feature-card {
-            background: rgba(0, 0, 0, 0.2);
-            padding: 2rem;
-            border-radius: 12px;
-            border: 1px solid var(--border-color);
+            background: var(--color-surface);
+            padding: 1.75rem;
+            border-radius: var(--radius-lg);
+            border: 1px solid var(--color-border);
+            transition: border-color 0.2s;
         }
+        .feature-card:hover { border-color: rgba(224,90,0,0.35); }
         .feature-card h3 {
-            font-size: 1.25rem;
-            margin-bottom: 1rem;
-            display: flex;
-            align-items: center;
-            gap: 0.5rem;
+            font-size: 0.975rem;
+            font-weight: 600;
+            margin-bottom: 0.6rem;
         }
         .feature-card p {
-            color: var(--text-muted);
-            line-height: 1.5;
+            color: var(--color-muted);
+            font-size: 0.875rem;
+            line-height: 1.65;
+        }
+
+        /* ── How it works ── */
+        .steps {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(230px, 1fr));
+            gap: 1.5rem;
+        }
+        .step {
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-lg);
+            padding: 1.75rem;
+        }
+        .step-num {
+            font-family: monospace;
+            font-size: 2.25rem;
+            font-weight: 700;
+            color: rgba(224,90,0,0.25);
+            line-height: 1;
+            margin-bottom: 1rem;
+        }
+        .step h3 { font-size: 0.975rem; font-weight: 600; margin-bottom: 0.5rem; }
+        .step p  { color: var(--color-muted); font-size: 0.875rem; line-height: 1.6; }
+
+        /* ── Quickstart ── */
+        .quickstart {
+            background: var(--color-surface);
+            border: 1px solid var(--color-border);
+            border-radius: var(--radius-lg);
+            padding: 2.5rem;
+            margin: 5rem 0 3rem;
+            text-align: center;
+        }
+        .quickstart h2 { font-size: 1.4rem; margin-bottom: 0.4rem; }
+        .quickstart > p { color: var(--color-muted); font-size: 0.9rem; margin-bottom: 1.5rem; }
+        .quickstart .code-block { text-align: left; margin: 0; }
+        @media (max-width: 600px) {
+            .hero { padding: 3rem 1.25rem; }
         }
     </style>
 </head>
@@ -61,20 +135,26 @@
     {% include "components/navbar.html" %}
 
     <main class="container">
+
+        <!-- Hero -->
         <section class="hero">
+            <div class="hero-badge">v{{ paas_version }} · Rust · Zero dependencies</div>
             <h1>🦀 {{ app_name }}</h1>
-            <p>
-                {{ t.land_subtitle }}
-            </p>
+            <p>{{ t.land_subtitle }}</p>
             <div class="hero-buttons">
                 {% if user.is_some() %}
-                    <a href="/dashboard" class="btn btn-primary" style="font-size: 1.1rem; padding: 0.75rem 1.5rem;">{{ t.land_btn_dashboard }}</a>
+                    <a href="/dashboard" class="btn btn-primary btn-lg">{{ t.land_btn_dashboard }}</a>
                 {% else %}
-                    <a href="/login" class="btn btn-primary" style="font-size: 1.1rem; padding: 0.75rem 1.5rem;">{{ t.land_btn_login }}</a>
+                    <a href="/login" class="btn btn-primary btn-lg">{{ t.land_btn_login }}</a>
                 {% endif %}
-                <a href="/docs" class="btn btn-secondary" style="font-size: 1.1rem; padding: 0.75rem 1.5rem;">{{ t.land_btn_docs }}</a>
+                <a href="/docs" class="btn btn-secondary btn-lg">{{ t.land_btn_docs }}</a>
             </div>
         </section>
+
+        <!-- Features -->
+        <div class="section-heading">
+            <h2>{{ t.land_features_title }}</h2>
+        </div>
 
         <section class="features">
             <div class="feature-card">
@@ -89,7 +169,59 @@
                 <h3>{{ t.land_feat3_title }}</h3>
                 <p>{{ t.land_feat3_desc }}</p>
             </div>
+            <div class="feature-card">
+                <h3>{{ t.land_feat4_title }}</h3>
+                <p>{{ t.land_feat4_desc }}</p>
+            </div>
+            <div class="feature-card">
+                <h3>{{ t.land_feat5_title }}</h3>
+                <p>{{ t.land_feat5_desc }}</p>
+            </div>
+            <div class="feature-card">
+                <h3>{{ t.land_feat6_title }}</h3>
+                <p>{{ t.land_feat6_desc }}</p>
+            </div>
         </section>
+
+        <!-- How it works steps -->
+        <div class="section-heading" style="margin-top: 4rem;">
+            <h2>{{ t.land_how_title }}</h2>
+        </div>
+
+        <section class="steps">
+            <div class="step">
+                <div class="step-num">01</div>
+                <h3>{{ t.land_step1_title }}</h3>
+                <p>{{ t.land_step1_desc }}</p>
+            </div>
+            <div class="step">
+                <div class="step-num">02</div>
+                <h3>{{ t.land_step2_title }}</h3>
+                <p>{{ t.land_step2_desc }}</p>
+            </div>
+            <div class="step">
+                <div class="step-num">03</div>
+                <h3>{{ t.land_step3_title }}</h3>
+                <p>{{ t.land_step3_desc }}</p>
+            </div>
+        </section>
+
+        <!-- Quick start -->
+        <section class="quickstart">
+            <h2>{{ t.land_quickstart_title }}</h2>
+            <p>{{ t.land_quickstart_sub }}</p>
+            <pre class="code-block"># 1. Compila para el servidor (Linux x86-64)
+cargo build --release --target x86_64-unknown-linux-gnu
+
+# 2. Deploy con tu API key
+curl -X POST https://paas.tudominio.com/api/deploy \
+  -H "Authorization: Bearer $PAAS_API_KEY" \
+  -F "name=mi-app" \
+  -F "binary=@./target/x86_64-unknown-linux-gnu/release/mi-app"
+
+# Tu app estará disponible en: https://mi-app.paas.tudominio.com</pre>
+        </section>
+
     </main>
 </body>
 </html>

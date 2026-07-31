@@ -9,7 +9,7 @@
             <a href="/docs" class="nav-link">{{ t.nav_docs }}</a>
             {% if let Some(u) = user %}
                 <a href="/dashboard" class="nav-link">{{ t.nav_dashboard }}</a>
-                <span style="color: var(--text-muted); margin-left: 1rem;">@{{ u.username }}</span>
+                <span style="color: var(--color-muted); margin-left: 1rem;">@{{ u.username }}</span>
                 <form action="/logout" method="POST" style="display:inline; margin-left: 1rem;">
                     <button type="submit" class="btn btn-sm btn-secondary">{{ t.nav_logout }}</button>
                 </form>
@@ -17,9 +17,9 @@
                 <a href="/login" class="btn btn-sm btn-primary" style="margin-left: 1rem;">{{ t.nav_login }}</a>
             {% endif %}
             <div style="margin-left: 1.5rem; display: inline-flex; gap: 0.5rem; align-items: center;">
-                <a href="/set_lang?lang=es" onclick="this.href='/set_lang?lang=es&next=' + encodeURIComponent(window.location.pathname + window.location.search)" style="text-decoration: none; color: var(--text-muted); font-size: 0.9rem;" title="Español">ES</a>
-                <span style="color: var(--border-color);">|</span>
-                <a href="/set_lang?lang=en" onclick="this.href='/set_lang?lang=en&next=' + encodeURIComponent(window.location.pathname + window.location.search)" style="text-decoration: none; color: var(--text-muted); font-size: 0.9rem;" title="English">EN</a>
+                <a href="/set_lang?lang=es" onclick="this.href='/set_lang?lang=es&next=' + encodeURIComponent(window.location.pathname + window.location.search)" style="text-decoration: none; color: var(--color-muted); font-size: 0.9rem;" title="Español">ES</a>
+                <span style="color: var(--color-border);">|</span>
+                <a href="/set_lang?lang=en" onclick="this.href='/set_lang?lang=en&next=' + encodeURIComponent(window.location.pathname + window.location.search)" style="text-decoration: none; color: var(--color-muted); font-size: 0.9rem;" title="English">EN</a>
             </div>
         </div>
     </div>

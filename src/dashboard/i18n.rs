@@ -110,9 +110,46 @@ define_dict! {
         en: "No AWS needed. Each project has a dedicated S3 bucket hosted directly on the same server." 
     },
     land_feat3_title: { es: "🔄 Integración CI/CD", en: "🔄 CI/CD Integration" },
-    land_feat3_desc: { 
-        es: "Haz push a GitHub y observa cómo tu código se compila y se despliega mágicamente en menos de un minuto usando nuestra plantilla de Actions.", 
-        en: "Push to GitHub and watch your code magically build and deploy in under a minute using our Actions template." 
+    land_feat3_desc: {
+        es: "Haz push a GitHub y observa cómo tu código se compila y se despliega mágicamente en menos de un minuto usando nuestra plantilla de Actions.",
+        en: "Push to GitHub and watch your code magically build and deploy in under a minute using our Actions template."
+    },
+    land_feat4_title: { es: "🗄️ SQLite & Backups", en: "🗄️ SQLite & Backups" },
+    land_feat4_desc: {
+        es: "Tu app recibe DATABASE_URL lista para SQLx o rusqlite. Descarga backups en vivo desde el dashboard sin interrumpir el servicio.",
+        en: "Your app receives a ready-to-use DATABASE_URL for SQLx or rusqlite. Download live backups from the dashboard without interrupting the service."
+    },
+    land_feat5_title: { es: "⚙️ Variables de Entorno", en: "⚙️ Environment Variables" },
+    land_feat5_desc: {
+        es: "Edita las variables de entorno de cada proyecto desde el dashboard. Los cambios se aplican al instante reiniciando el proceso.",
+        en: "Edit each project's environment variables from the dashboard. Changes apply instantly by restarting the process."
+    },
+    land_feat6_title: { es: "👤 Multi-usuario & API Key", en: "👤 Multi-user & API Key" },
+    land_feat6_desc: {
+        es: "Registro multi-usuario, sesiones seguras y claves API para automatizar deploys desde tus scripts o pipelines de CI/CD.",
+        en: "Multi-user registration, secure sessions and API keys to automate deploys from your scripts or CI/CD pipelines."
+    },
+    land_features_title: { es: "¿Qué incluye?", en: "What's included?" },
+    land_how_title: { es: "¿Cómo funciona?", en: "How does it work?" },
+    land_step1_title: { es: "Compila tu binario", en: "Compile your binary" },
+    land_step1_desc: {
+        es: "Cualquier app que compile a un binario standalone (Rust, Go, C…) es compatible. Apunta al target de tu servidor.",
+        en: "Any app that compiles to a standalone binary (Rust, Go, C…) is compatible. Target your server's architecture."
+    },
+    land_step2_title: { es: "Haz el deploy", en: "Deploy it" },
+    land_step2_desc: {
+        es: "Sube el binario al API con curl o GitHub Actions. Se asigna un puerto, subdominio y variables de entorno en segundos.",
+        en: "Upload the binary to the API with curl or GitHub Actions. A port, subdomain and env vars are assigned in seconds."
+    },
+    land_step3_title: { es: "Tu app está en línea", en: "Your app is online" },
+    land_step3_desc: {
+        es: "Accede por subdominio. El proxy enruta el tráfico, el S3 aislado está listo y la DB inicializada. Sin pasos adicionales.",
+        en: "Access it by subdomain. The proxy routes traffic, isolated S3 is ready and DB initialized. No extra steps."
+    },
+    land_quickstart_title: { es: "Un comando para empezar", en: "One command to get started" },
+    land_quickstart_sub: {
+        es: "Compila para Linux y envía el binario. El resto es automático.",
+        en: "Compile for Linux and send the binary. The rest is automatic."
     }
 }
 
