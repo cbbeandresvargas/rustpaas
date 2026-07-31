@@ -119,6 +119,23 @@ pub struct Project {
     pub user_id: String,
     pub created_at: DateTime<Utc>,
     pub updated_at: DateTime<Utc>,
+    /// Optional custom domain mapping (e.g. "myapp.com")
+    pub custom_domain: Option<String>,
+    /// RAM limit in MB (None = unlimited)
+    pub ram_limit_mb: Option<i64>,
+}
+
+// ─────────────────────────────────────────────
+// DeployHistory
+// ─────────────────────────────────────────────
+
+#[derive(Debug, Clone, Serialize, Deserialize, FromRow)]
+pub struct DeployHistory {
+    pub id: String,
+    pub project_id: String,
+    pub binary_path: String,
+    pub is_bundle: bool,
+    pub deployed_at: DateTime<Utc>,
 }
 
 impl Project {
@@ -139,6 +156,8 @@ impl Project {
             user_id: user_id.into(),
             created_at: now,
             updated_at: now,
+            custom_domain: None,
+            ram_limit_mb: None,
         }
     }
 
@@ -186,11 +205,13 @@ impl Bucket {
 
 use sqlx::SqlitePool;
 
+const PROJECT_COLS: &str =
+    "id, name, subdomain, port, status, pid, user_id, created_at, updated_at, custom_domain, ram_limit_mb";
+
 impl Project {
     pub async fn find_all(pool: &SqlitePool) -> sqlx::Result<Vec<Project>> {
         sqlx::query_as::<_, Project>(
-            "SELECT id, name, subdomain, port, status, pid, user_id, created_at, updated_at \
-             FROM projects ORDER BY created_at DESC",
+            &format!("SELECT {PROJECT_COLS} FROM projects ORDER BY created_at DESC"),
         )
         .fetch_all(pool)
         .await
@@ -198,8 +219,7 @@ impl Project {
 
     pub async fn find_by_id(pool: &SqlitePool, id: &str) -> sqlx::Result<Option<Project>> {
         sqlx::query_as::<_, Project>(
-            "SELECT id, name, subdomain, port, status, pid, user_id, created_at, updated_at \
-             FROM projects WHERE id = ?",
+            &format!("SELECT {PROJECT_COLS} FROM projects WHERE id = ?"),
         )
         .bind(id)
         .fetch_optional(pool)
@@ -208,17 +228,26 @@ impl Project {
 
     pub async fn find_by_subdomain(pool: &SqlitePool, subdomain: &str) -> sqlx::Result<Option<Project>> {
         sqlx::query_as::<_, Project>(
-            "SELECT id, name, subdomain, port, status, pid, user_id, created_at, updated_at \
-             FROM projects WHERE subdomain = ?",
+            &format!("SELECT {PROJECT_COLS} FROM projects WHERE subdomain = ?"),
         )
         .bind(subdomain)
         .fetch_optional(pool)
         .await
     }
 
+    pub async fn find_by_custom_domain(pool: &SqlitePool, domain: &str) -> sqlx::Result<Option<Project>> {
+        sqlx::query_as::<_, Project>(
+            &format!("SELECT {PROJECT_COLS} FROM projects WHERE custom_domain = ?"),
+        )
+        .bind(domain)
+        .fetch_optional(pool)
+        .await
+    }
+
     pub async fn insert(&self, pool: &SqlitePool) -> sqlx::Result<()> {
         sqlx::query(
-            "INSERT INTO projects (id, name, subdomain, port, status, pid, user_id, created_at, updated_at) \
+            "INSERT INTO projects \
+             (id, name, subdomain, port, status, pid, user_id, created_at, updated_at) \
              VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
         )
         .bind(&self.id)
@@ -241,17 +270,43 @@ impl Project {
         status: ProjectStatus,
         pid: Option<i64>,
     ) -> sqlx::Result<()> {
-        let status_str = status.to_string();
-        let updated_at = Utc::now();
         sqlx::query(
             "UPDATE projects SET status = ?, pid = ?, updated_at = ? WHERE id = ?",
         )
-        .bind(&status_str)
+        .bind(status.to_string())
         .bind(pid)
-        .bind(updated_at)
+        .bind(Utc::now())
         .bind(id)
         .execute(pool)
         .await?;
+        Ok(())
+    }
+
+    pub async fn update_custom_domain(
+        pool: &SqlitePool,
+        id: &str,
+        domain: Option<&str>,
+    ) -> sqlx::Result<()> {
+        sqlx::query("UPDATE projects SET custom_domain = ?, updated_at = ? WHERE id = ?")
+            .bind(domain)
+            .bind(Utc::now())
+            .bind(id)
+            .execute(pool)
+            .await?;
+        Ok(())
+    }
+
+    pub async fn update_ram_limit(
+        pool: &SqlitePool,
+        id: &str,
+        ram_limit_mb: Option<i64>,
+    ) -> sqlx::Result<()> {
+        sqlx::query("UPDATE projects SET ram_limit_mb = ?, updated_at = ? WHERE id = ?")
+            .bind(ram_limit_mb)
+            .bind(Utc::now())
+            .bind(id)
+            .execute(pool)
+            .await?;
         Ok(())
     }
 
@@ -261,6 +316,63 @@ impl Project {
             .execute(pool)
             .await?;
         Ok(())
+    }
+}
+
+impl DeployHistory {
+    pub async fn insert(pool: &SqlitePool, project_id: &str, binary_path: &str, is_bundle: bool) -> sqlx::Result<String> {
+        let id = uuid::Uuid::new_v4().to_string();
+        sqlx::query(
+            "INSERT INTO deploy_history (id, project_id, binary_path, is_bundle) VALUES (?, ?, ?, ?)",
+        )
+        .bind(&id)
+        .bind(project_id)
+        .bind(binary_path)
+        .bind(is_bundle)
+        .execute(pool)
+        .await?;
+        Ok(id)
+    }
+
+    pub async fn find_by_project(pool: &SqlitePool, project_id: &str) -> sqlx::Result<Vec<DeployHistory>> {
+        sqlx::query_as::<_, DeployHistory>(
+            "SELECT id, project_id, binary_path, is_bundle, deployed_at \
+             FROM deploy_history WHERE project_id = ? ORDER BY deployed_at DESC",
+        )
+        .bind(project_id)
+        .fetch_all(pool)
+        .await
+    }
+
+    pub async fn find_by_id(pool: &SqlitePool, id: &str) -> sqlx::Result<Option<DeployHistory>> {
+        sqlx::query_as::<_, DeployHistory>(
+            "SELECT id, project_id, binary_path, is_bundle, deployed_at \
+             FROM deploy_history WHERE id = ?",
+        )
+        .bind(id)
+        .fetch_optional(pool)
+        .await
+    }
+
+    /// Keep only the last `max` entries per project, deleting older ones.
+    pub async fn prune(pool: &SqlitePool, project_id: &str, max: i64) -> sqlx::Result<Vec<String>> {
+        let old: Vec<(String, String)> = sqlx::query_as(
+            "SELECT id, binary_path FROM deploy_history \
+             WHERE project_id = ? ORDER BY deployed_at DESC LIMIT -1 OFFSET ?",
+        )
+        .bind(project_id)
+        .bind(max)
+        .fetch_all(pool)
+        .await?;
+
+        for (id, _) in &old {
+            sqlx::query("DELETE FROM deploy_history WHERE id = ?")
+                .bind(id)
+                .execute(pool)
+                .await?;
+        }
+
+        Ok(old.into_iter().map(|(_, path)| path).collect())
     }
 }
 

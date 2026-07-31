@@ -8,16 +8,16 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use sqlx::SqlitePool;
-use tokio::sync::Mutex;
+use tokio::sync::{Mutex, Semaphore};
 use tracing::info;
 
 use crate::config::Config;
-use crate::db::models::{Bucket, Project, ProjectStatus};
+use crate::db::models::{Bucket, DeployHistory, Project, ProjectStatus};
 use crate::runner::{self, ProcessManager};
 use crate::s3;
 
 // ─────────────────────────────────────────────
-// Shared application state (injected by Axum)
+// Shared application state
 // ─────────────────────────────────────────────
 
 #[derive(Clone)]
@@ -25,10 +25,12 @@ pub struct AppState {
     pub config: Config,
     pub db: SqlitePool,
     pub process_manager: Arc<Mutex<ProcessManager>>,
+    /// Limits concurrent deploys to 1 to prevent race conditions
+    pub deploy_semaphore: Arc<Semaphore>,
 }
 
 // ─────────────────────────────────────────────
-// Response types
+// Response / request types
 // ─────────────────────────────────────────────
 
 #[derive(Serialize)]
@@ -51,6 +53,23 @@ pub struct DeployQuery {
     pub subdomain: Option<String>,
 }
 
+#[derive(Deserialize)]
+pub struct UpdateEnvPayload {
+    pub env_content: String,
+}
+
+#[derive(Deserialize)]
+pub struct CustomDomainPayload {
+    /// Set to Some("") or None to remove the custom domain
+    pub domain: Option<String>,
+}
+
+#[derive(Deserialize)]
+pub struct ResourceLimitsPayload {
+    /// RAM limit in MB (null to remove limit)
+    pub ram_limit_mb: Option<i64>,
+}
+
 // ─────────────────────────────────────────────
 // Helpers
 // ─────────────────────────────────────────────
@@ -60,7 +79,6 @@ fn api_err(status: StatusCode, msg: impl Into<String>) -> Response {
 }
 
 /// Authenticate a request via Bearer API key or session cookie.
-/// Returns Some(user_id) on success, None if unauthenticated.
 async fn authenticate(
     jar: &axum_extra::extract::cookie::CookieJar,
     headers: &axum::http::HeaderMap,
@@ -100,8 +118,8 @@ async fn authenticate(
 }
 
 const MAX_BINARY_SIZE: usize = 100 * 1024 * 1024; // 100 MB
+const MAX_DEPLOY_HISTORY: i64 = 3;
 
-/// Find an available port in the configured range
 async fn allocate_port(config: &Config, db: &SqlitePool) -> anyhow::Result<u16> {
     let rows: Vec<(i64,)> = sqlx::query_as("SELECT port FROM projects")
         .fetch_all(db)
@@ -116,18 +134,30 @@ async fn allocate_port(config: &Config, db: &SqlitePool) -> anyhow::Result<u16> 
     anyhow::bail!("No available ports in range {}-{}", config.app_port_start, config.app_port_end)
 }
 
+/// Write the binary to `bin/{name}`, make it executable, return the path.
+fn write_binary(bin_dir: &std::path::Path, name: &str, bytes: &[u8]) -> anyhow::Result<()> {
+    std::fs::create_dir_all(bin_dir)?;
+
+    #[cfg(windows)]
+    let bin_path = bin_dir.join(format!("{}.exe", name));
+    #[cfg(not(windows))]
+    let bin_path = bin_dir.join(name);
+
+    std::fs::write(&bin_path, bytes)?;
+
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&bin_path, std::fs::Permissions::from_mode(0o755));
+    }
+
+    Ok(())
+}
+
 // ─────────────────────────────────────────────
-// Deploy endpoint
+// POST /api/deploy
 // ─────────────────────────────────────────────
 
-/// POST /api/deploy
-///
-/// Accepts a multipart form with:
-/// - `binary`: the compiled executable (max 100 MB)
-/// - `name`: project name (lowercase alphanumeric + hyphens)
-///
-/// If the project already exists and is owned by the same user,
-/// the binary is replaced and the process is restarted (re-deploy).
 pub async fn deploy(
     State(state): State<AppState>,
     jar: axum_extra::extract::cookie::CookieJar,
@@ -142,6 +172,15 @@ pub async fn deploy(
         ),
     };
 
+    // Acquire deploy lock — only 1 concurrent deploy allowed
+    let _permit = match state.deploy_semaphore.try_acquire() {
+        Ok(p) => p,
+        Err(_) => return api_err(
+            StatusCode::SERVICE_UNAVAILABLE,
+            "A deploy is already in progress. Please wait and try again.",
+        ),
+    };
+
     let mut binary_bytes: Option<bytes::Bytes> = None;
     let mut project_name: Option<String> = None;
 
@@ -151,7 +190,7 @@ pub async fn deploy(
                 match field.bytes().await {
                     Ok(b) => {
                         if b.len() > MAX_BINARY_SIZE {
-                            return api_err(StatusCode::PAYLOAD_TOO_LARGE, "Binary exceeds 100 MB limit");
+                            return api_err(StatusCode::PAYLOAD_TOO_LARGE, "Upload exceeds 100 MB limit");
                         }
                         binary_bytes = Some(b);
                     }
@@ -178,7 +217,6 @@ pub async fn deploy(
         _ => return api_err(StatusCode::BAD_REQUEST, "Missing or empty 'name' field"),
     };
 
-    // Validate: only lowercase letters, digits, and interior hyphens
     if !name.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-')
         || name.starts_with('-')
         || name.ends_with('-')
@@ -190,39 +228,57 @@ pub async fn deploy(
         );
     }
 
-    // ── Re-deploy: update existing project ───────────────────────────────────
-    let existing_project: Option<Project> = sqlx::query_as::<_, Project>(
-        "SELECT id, name, subdomain, port, status, pid, user_id, created_at, updated_at \
-         FROM projects WHERE name = ? LIMIT 1",
+    let is_bundle = binary.len() >= 2 && binary[0] == 0x1f && binary[1] == 0x8b;
+
+    // ── Re-deploy ────────────────────────────────────────────────────────────
+    let existing: Option<Project> = sqlx::query_as::<_, Project>(
+        "SELECT id, name, subdomain, port, status, pid, user_id, created_at, updated_at, \
+         custom_domain, ram_limit_mb FROM projects WHERE name = ? LIMIT 1",
     )
     .bind(&name)
     .fetch_optional(&state.db)
     .await
     .unwrap_or(None);
 
-    if let Some(existing) = existing_project {
+    if let Some(existing) = existing {
         if existing.user_id != user_id {
             return api_err(StatusCode::FORBIDDEN, "A project with this name is owned by another user");
         }
 
         let bin_dir = state.config.project_bin_dir(&name);
-        if let Err(e) = std::fs::create_dir_all(&bin_dir) {
-            return api_err(StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create bin dir: {}", e));
+        let deploys_dir = state.config.project_deploys_dir(&name);
+
+        // Save current binary snapshot for rollback before overwriting
+        match runner::save_deploy_snapshot(&bin_dir, &deploys_dir, &name, is_bundle, &binary) {
+            Ok(snapshot_path) => {
+                if let Ok(old_paths) = DeployHistory::prune(&state.db, &existing.id, MAX_DEPLOY_HISTORY).await {
+                    runner::delete_snapshots(&old_paths);
+                }
+                let _ = DeployHistory::insert(&state.db, &existing.id, &snapshot_path, is_bundle).await;
+            }
+            Err(e) => tracing::warn!("Failed to save deploy snapshot: {}", e),
         }
 
-        #[cfg(windows)]
-        let bin_path = bin_dir.join(format!("{}.exe", name));
-        #[cfg(not(windows))]
-        let bin_path = bin_dir.join(&name);
-
-        if let Err(e) = std::fs::write(&bin_path, &binary) {
+        // Write new binary or extract bundle
+        if is_bundle {
+            let workspace_dir = state.config.project_workspace_dir(&name);
+            match runner::extract_bundle(&binary, &workspace_dir, &name) {
+                Ok(bin_path) => {
+                    // Copy the extracted binary into bin/ so find_binary() can locate it
+                    let bin_dir = state.config.project_bin_dir(&name);
+                    let _ = std::fs::create_dir_all(&bin_dir);
+                    let dest = bin_dir.join(&name);
+                    let _ = std::fs::copy(&bin_path, &dest);
+                    #[cfg(unix)]
+                    {
+                        use std::os::unix::fs::PermissionsExt;
+                        let _ = std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755));
+                    }
+                }
+                Err(e) => return api_err(StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to extract bundle: {}", e)),
+            }
+        } else if let Err(e) = write_binary(&bin_dir, &name, &binary) {
             return api_err(StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to write binary: {}", e));
-        }
-
-        #[cfg(unix)]
-        {
-            use std::os::unix::fs::PermissionsExt;
-            let _ = std::fs::set_permissions(&bin_path, std::fs::Permissions::from_mode(0o755));
         }
 
         let _ = runner::kill_process(&existing.id, &state.process_manager).await;
@@ -230,23 +286,15 @@ pub async fn deploy(
 
         return match runner::spawn_process(&state.config, &existing, &state.process_manager).await {
             Ok(pid) => {
-                let _ = Project::update_status(
-                    &state.db,
-                    &existing.id,
-                    ProjectStatus::Running,
-                    Some(pid as i64),
-                ).await;
-                info!("✅ Re-deployed project '{}' on port {}", name, existing.port);
-                (
-                    StatusCode::OK,
-                    Json(DeployResponse {
-                        project_id: existing.id,
-                        name,
-                        port: existing.port as u16,
-                        pid,
-                        message: "Re-deployed successfully".to_string(),
-                    }),
-                ).into_response()
+                let _ = Project::update_status(&state.db, &existing.id, ProjectStatus::Running, Some(pid as i64)).await;
+                info!("✅ Re-deployed '{}' on port {}", name, existing.port);
+                (StatusCode::OK, Json(DeployResponse {
+                    project_id: existing.id,
+                    name,
+                    port: existing.port as u16,
+                    pid,
+                    message: "Re-deployed successfully".to_string(),
+                })).into_response()
             }
             Err(e) => {
                 let _ = Project::update_status(&state.db, &existing.id, ProjectStatus::Error, None).await;
@@ -267,23 +315,24 @@ pub async fn deploy(
     }
 
     let bin_dir = state.config.project_bin_dir(&name);
-    if let Err(e) = std::fs::create_dir_all(&bin_dir) {
-        return api_err(StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create bin dir: {}", e));
-    }
 
-    #[cfg(windows)]
-    let bin_path = bin_dir.join(format!("{}.exe", name));
-    #[cfg(not(windows))]
-    let bin_path = bin_dir.join(&name);
-
-    if let Err(e) = std::fs::write(&bin_path, &binary) {
+    if is_bundle {
+        let workspace_dir = state.config.project_workspace_dir(&name);
+        match runner::extract_bundle(&binary, &workspace_dir, &name) {
+            Ok(bin_path) => {
+                let _ = std::fs::create_dir_all(&bin_dir);
+                let dest = bin_dir.join(&name);
+                let _ = std::fs::copy(&bin_path, &dest);
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    let _ = std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755));
+                }
+            }
+            Err(e) => return api_err(StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to extract bundle: {}", e)),
+        }
+    } else if let Err(e) = write_binary(&bin_dir, &name, &binary) {
         return api_err(StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to write binary: {}", e));
-    }
-
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&bin_path, std::fs::Permissions::from_mode(0o755));
     }
 
     let bucket_name = format!("bucket-{}", project.name);
@@ -298,25 +347,15 @@ pub async fn deploy(
 
     match runner::spawn_process(&state.config, &project, &state.process_manager).await {
         Ok(pid) => {
-            let _ = Project::update_status(
-                &state.db,
-                &project.id,
-                ProjectStatus::Running,
-                Some(pid as i64),
-            ).await;
-
-            info!("✅ Deployed project '{}' on port {}", name, port);
-
-            (
-                StatusCode::CREATED,
-                Json(DeployResponse {
-                    project_id: project.id,
-                    name,
-                    port,
-                    pid,
-                    message: "Deployed successfully".to_string(),
-                }),
-            ).into_response()
+            let _ = Project::update_status(&state.db, &project.id, ProjectStatus::Running, Some(pid as i64)).await;
+            info!("✅ Deployed '{}' on port {}", name, port);
+            (StatusCode::CREATED, Json(DeployResponse {
+                project_id: project.id,
+                name,
+                port,
+                pid,
+                message: "Deployed successfully".to_string(),
+            })).into_response()
         }
         Err(e) => {
             let _ = Project::update_status(&state.db, &project.id, ProjectStatus::Error, None).await;
@@ -326,10 +365,9 @@ pub async fn deploy(
 }
 
 // ─────────────────────────────────────────────
-// CRUD endpoints (all require authentication)
+// Project CRUD (all authenticated)
 // ─────────────────────────────────────────────
 
-/// GET /api/projects — List all projects
 pub async fn list_projects(
     State(state): State<AppState>,
     jar: axum_extra::extract::cookie::CookieJar,
@@ -344,7 +382,6 @@ pub async fn list_projects(
     }
 }
 
-/// DELETE /api/projects/:id — Delete a project, stop its process, and clean up files
 pub async fn delete_project(
     Path(id): Path<String>,
     State(state): State<AppState>,
@@ -367,7 +404,6 @@ pub async fn delete_project(
         return api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string());
     }
 
-    // Clean up app directory (binary, data, logs) and S3 storage
     let app_dir = state.config.apps_dir().join(&project.name);
     let _ = tokio::fs::remove_dir_all(&app_dir).await;
     let s3_dir = state.config.storage_dir().join(&project.id);
@@ -376,7 +412,6 @@ pub async fn delete_project(
     (StatusCode::OK, Json(serde_json::json!({"deleted": id}))).into_response()
 }
 
-/// POST /api/projects/:id/restart
 pub async fn restart_project(
     Path(id): Path<String>,
     State(state): State<AppState>,
@@ -404,7 +439,6 @@ pub async fn restart_project(
     }
 }
 
-/// POST /api/projects/:id/stop
 pub async fn stop_project(
     Path(id): Path<String>,
     State(state): State<AppState>,
@@ -422,7 +456,6 @@ pub async fn stop_project(
     (StatusCode::OK, Json(serde_json::json!({"stopped": true}))).into_response()
 }
 
-/// GET /api/projects/:id/backup — Download a SQLite backup of the project's DB
 pub async fn download_backup(
     Path(id): Path<String>,
     State(state): State<AppState>,
@@ -452,32 +485,24 @@ pub async fn download_backup(
         let conn = rusqlite::Connection::open(&db_path_str)?;
         conn.execute_batch(&format!("VACUUM INTO '{}'", backup_path_str.replace('\'', "''")))
             .map_err(|e| anyhow::anyhow!("Backup failed: {}", e))
-    })
-    .await;
+    }).await;
 
     match result {
-        Ok(Ok(_)) => {
-            match tokio::fs::read(&backup_path).await {
-                Ok(bytes) => {
-                    let filename = format!("attachment; filename=\"{}-backup.db\"", project.name);
-                    (
-                        StatusCode::OK,
-                        [
-                            ("Content-Type", "application/octet-stream"),
-                            ("Content-Disposition", filename.as_str()),
-                        ],
-                        bytes,
-                    ).into_response()
-                }
-                Err(e) => api_err(StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to read backup: {}", e)),
+        Ok(Ok(_)) => match tokio::fs::read(&backup_path).await {
+            Ok(bytes) => {
+                let cd = format!("attachment; filename=\"{}-backup.db\"", project.name);
+                (StatusCode::OK, [
+                    ("Content-Type", "application/octet-stream"),
+                    ("Content-Disposition", cd.as_str()),
+                ], bytes).into_response()
             }
-        }
+            Err(e) => api_err(StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to read backup: {}", e)),
+        },
         Ok(Err(e)) => api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
         Err(e) => api_err(StatusCode::INTERNAL_SERVER_ERROR, format!("Backup task failed: {}", e)),
     }
 }
 
-/// GET /api/projects/:id/env — Get the raw .env file contents
 pub async fn get_env(
     Path(id): Path<String>,
     State(state): State<AppState>,
@@ -499,12 +524,6 @@ pub async fn get_env(
     (StatusCode::OK, content).into_response()
 }
 
-#[derive(Deserialize)]
-pub struct UpdateEnvPayload {
-    pub env_content: String,
-}
-
-/// POST /api/projects/:id/env — Update the .env file and restart the project
 pub async fn update_env(
     Path(id): Path<String>,
     State(state): State<AppState>,
@@ -527,9 +546,8 @@ pub async fn update_env(
         return api_err(StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to create data dir: {}", e));
     }
 
-    let env_path = data_dir.join(".env");
-    if let Err(e) = tokio::fs::write(&env_path, &payload.env_content).await {
-        return api_err(StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to save .env file: {}", e));
+    if let Err(e) = tokio::fs::write(data_dir.join(".env"), &payload.env_content).await {
+        return api_err(StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to save .env: {}", e));
     }
 
     let _ = runner::kill_process(&id, &state.process_manager).await;
@@ -543,22 +561,262 @@ pub async fn update_env(
 }
 
 // ─────────────────────────────────────────────
+// Deploy history / rollback
+// ─────────────────────────────────────────────
+
+/// GET /api/projects/:id/deploys
+pub async fn list_deploys(
+    Path(id): Path<String>,
+    State(state): State<AppState>,
+    jar: axum_extra::extract::cookie::CookieJar,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    if authenticate(&jar, &headers, &state.db).await.is_none() {
+        return api_err(StatusCode::UNAUTHORIZED, "Authentication required");
+    }
+
+    match DeployHistory::find_by_project(&state.db, &id).await {
+        Ok(history) => Json(history).into_response(),
+        Err(e) => api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+    }
+}
+
+/// POST /api/projects/:id/rollback/:deploy_id
+pub async fn rollback_deploy(
+    Path((id, deploy_id)): Path<(String, String)>,
+    State(state): State<AppState>,
+    jar: axum_extra::extract::cookie::CookieJar,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    if authenticate(&jar, &headers, &state.db).await.is_none() {
+        return api_err(StatusCode::UNAUTHORIZED, "Authentication required");
+    }
+
+    let project = match Project::find_by_id(&state.db, &id).await {
+        Ok(Some(p)) => p,
+        Ok(None) => return api_err(StatusCode::NOT_FOUND, "Project not found"),
+        Err(e) => return api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+    };
+
+    let entry = match DeployHistory::find_by_id(&state.db, &deploy_id).await {
+        Ok(Some(e)) if e.project_id == id => e,
+        Ok(_) => return api_err(StatusCode::NOT_FOUND, "Deploy entry not found"),
+        Err(e) => return api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+    };
+
+    let snapshot_path = std::path::Path::new(&entry.binary_path);
+    if !snapshot_path.exists() {
+        return api_err(StatusCode::NOT_FOUND, "Snapshot file not found on disk");
+    }
+
+    let bin_dir = state.config.project_bin_dir(&project.name);
+
+    if entry.is_bundle {
+        let bytes = match std::fs::read(snapshot_path) {
+            Ok(b) => b,
+            Err(e) => return api_err(StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to read snapshot: {}", e)),
+        };
+        let workspace_dir = state.config.project_workspace_dir(&project.name);
+        if let Err(e) = runner::extract_bundle(&bytes, &workspace_dir, &project.name) {
+            return api_err(StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to extract bundle: {}", e));
+        }
+        let dest = bin_dir.join(&project.name);
+        let _ = std::fs::create_dir_all(&bin_dir);
+        if let Some(bin_in_workspace) = std::fs::read_dir(&workspace_dir)
+            .ok()
+            .and_then(|mut rd| rd.find_map(|e| {
+                let e = e.ok()?;
+                let p = e.path();
+                if p.file_name()?.to_str()? == project.name { Some(p) } else { None }
+            }))
+        {
+            let _ = std::fs::copy(bin_in_workspace, &dest);
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755));
+        }
+    } else {
+        let dest = bin_dir.join(&project.name);
+        let _ = std::fs::create_dir_all(&bin_dir);
+        if let Err(e) = std::fs::copy(snapshot_path, &dest) {
+            return api_err(StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to restore binary: {}", e));
+        }
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&dest, std::fs::Permissions::from_mode(0o755));
+        }
+    }
+
+    let _ = runner::kill_process(&id, &state.process_manager).await;
+    let _ = Project::update_status(&state.db, &id, ProjectStatus::Deploying, None).await;
+
+    match runner::spawn_process(&state.config, &project, &state.process_manager).await {
+        Ok(pid) => {
+            let _ = Project::update_status(&state.db, &id, ProjectStatus::Running, Some(pid as i64)).await;
+            info!("⏪ Rolled back project '{}' to deploy {}", project.name, deploy_id);
+            (StatusCode::OK, Json(serde_json::json!({"rolled_back": true, "pid": pid}))).into_response()
+        }
+        Err(e) => {
+            let _ = Project::update_status(&state.db, &id, ProjectStatus::Error, None).await;
+            api_err(StatusCode::INTERNAL_SERVER_ERROR, format!("Rollback failed to restart: {}", e))
+        }
+    }
+}
+
+// ─────────────────────────────────────────────
+// Metrics
+// ─────────────────────────────────────────────
+
+/// GET /api/projects/:id/metrics
+pub async fn get_metrics(
+    Path(id): Path<String>,
+    State(state): State<AppState>,
+    jar: axum_extra::extract::cookie::CookieJar,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    if authenticate(&jar, &headers, &state.db).await.is_none() {
+        return api_err(StatusCode::UNAUTHORIZED, "Authentication required");
+    }
+
+    let mgr = state.process_manager.lock().await;
+    match mgr.metrics.get(&id) {
+        Some(m) => Json(m).into_response(),
+        None => Json(runner::ProcessMetrics::default()).into_response(),
+    }
+}
+
+// ─────────────────────────────────────────────
+// Custom domain
+// ─────────────────────────────────────────────
+
+/// POST /api/projects/:id/custom_domain
+pub async fn set_custom_domain(
+    Path(id): Path<String>,
+    State(state): State<AppState>,
+    jar: axum_extra::extract::cookie::CookieJar,
+    headers: axum::http::HeaderMap,
+    Json(payload): Json<CustomDomainPayload>,
+) -> Response {
+    if authenticate(&jar, &headers, &state.db).await.is_none() {
+        return api_err(StatusCode::UNAUTHORIZED, "Authentication required");
+    }
+
+    // Normalize empty string to None
+    let domain = payload.domain.as_deref().filter(|d| !d.trim().is_empty());
+
+    match Project::update_custom_domain(&state.db, &id, domain).await {
+        Ok(_) => (StatusCode::OK, Json(serde_json::json!({"custom_domain": domain}))).into_response(),
+        Err(e) => api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+    }
+}
+
+// ─────────────────────────────────────────────
+// Resource limits
+// ─────────────────────────────────────────────
+
+/// PUT /api/projects/:id/limits
+pub async fn set_limits(
+    Path(id): Path<String>,
+    State(state): State<AppState>,
+    jar: axum_extra::extract::cookie::CookieJar,
+    headers: axum::http::HeaderMap,
+    Json(payload): Json<ResourceLimitsPayload>,
+) -> Response {
+    if authenticate(&jar, &headers, &state.db).await.is_none() {
+        return api_err(StatusCode::UNAUTHORIZED, "Authentication required");
+    }
+
+    if let Err(e) = Project::update_ram_limit(&state.db, &id, payload.ram_limit_mb).await {
+        return api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string());
+    }
+
+    // Restart process so the new limit takes effect
+    let project = match Project::find_by_id(&state.db, &id).await {
+        Ok(Some(p)) => p,
+        Ok(None) => return api_err(StatusCode::NOT_FOUND, "Project not found"),
+        Err(e) => return api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+    };
+
+    let _ = runner::kill_process(&id, &state.process_manager).await;
+    match runner::spawn_process(&state.config, &project, &state.process_manager).await {
+        Ok(pid) => {
+            let _ = Project::update_status(&state.db, &id, ProjectStatus::Running, Some(pid as i64)).await;
+            (StatusCode::OK, Json(serde_json::json!({"updated": true, "restarted": true}))).into_response()
+        }
+        Err(e) => api_err(StatusCode::INTERNAL_SERVER_ERROR, format!("Limit saved but restart failed: {}", e)),
+    }
+}
+
+// ─────────────────────────────────────────────
+// Caddy config generator (HTTPS setup helper)
+// ─────────────────────────────────────────────
+
+/// GET /api/caddy-config — Returns a ready-to-use Caddyfile for this PaaS instance
+pub async fn caddy_config(
+    State(state): State<AppState>,
+    jar: axum_extra::extract::cookie::CookieJar,
+    headers: axum::http::HeaderMap,
+) -> Response {
+    if authenticate(&jar, &headers, &state.db).await.is_none() {
+        return api_err(StatusCode::UNAUTHORIZED, "Authentication required");
+    }
+
+    let projects = match Project::find_all(&state.db).await {
+        Ok(p) => p,
+        Err(e) => return api_err(StatusCode::INTERNAL_SERVER_ERROR, e.to_string()),
+    };
+
+    let domain = &state.config.domain;
+    let paas_port = state.config.port;
+
+    let mut cfg = format!(
+        "# RustPaaS — generated Caddyfile\n\
+         # Place this at /etc/caddy/Caddyfile and run: systemctl reload caddy\n\n\
+         # Wildcard cert covers all app subdomains\n\
+         *.{domain} {{\n\
+         \treverse_proxy localhost:{paas_port}\n\
+         }}\n\n\
+         # Main dashboard\n\
+         {domain} {{\n\
+         \treverse_proxy localhost:{paas_port}\n\
+         }}\n"
+    );
+
+    // Custom domains
+    for project in &projects {
+        if let Some(ref custom) = project.custom_domain {
+            cfg.push_str(&format!(
+                "\n# Custom domain for project '{}'\n{} {{\n\treverse_proxy localhost:{}\n}}\n",
+                project.name, custom, paas_port
+            ));
+        }
+    }
+
+    (StatusCode::OK, [("Content-Type", "text/plain")], cfg).into_response()
+}
+
+// ─────────────────────────────────────────────
 // Internal helpers
 // ─────────────────────────────────────────────
 
 pub async fn ensure_admin_user(db: &SqlitePool) -> anyhow::Result<String> {
-    let existing: Option<(String,)> = sqlx::query_as("SELECT id FROM users WHERE username = 'admin' LIMIT 1")
-        .fetch_optional(db)
-        .await?;
+    let existing: Option<(String,)> = sqlx::query_as(
+        "SELECT id FROM users WHERE username = 'admin' LIMIT 1",
+    )
+    .fetch_optional(db)
+    .await?;
 
-    // If admin already exists, leave the password untouched
     if let Some((id,)) = existing {
         return Ok(id);
     }
 
     let user = crate::db::models::User::new("admin", "admin123");
     sqlx::query(
-        "INSERT OR IGNORE INTO users (id, username, password_hash, api_key, created_at) VALUES (?, ?, ?, ?, ?)",
+        "INSERT OR IGNORE INTO users (id, username, password_hash, api_key, created_at) \
+         VALUES (?, ?, ?, ?, ?)",
     )
     .bind(&user.id)
     .bind(&user.username)
@@ -569,6 +827,5 @@ pub async fn ensure_admin_user(db: &SqlitePool) -> anyhow::Result<String> {
     .await?;
 
     tracing::info!("⚠️  Created default admin user: admin / admin123");
-
     Ok(user.id)
 }

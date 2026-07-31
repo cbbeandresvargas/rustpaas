@@ -1,6 +1,7 @@
 use askama::Template;
 
-use crate::db::models::{Bucket, Project, User};
+use crate::db::models::{Bucket, DeployHistory, Project, User};
+use crate::runner::ProcessMetrics;
 use crate::s3::S3Object;
 use super::i18n::Dict;
 
@@ -32,6 +33,8 @@ pub struct ProjectDetailTemplate {
     pub s3_access_key: String,
     pub s3_secret_key: String,
     pub log_lines: Vec<String>,
+    pub deploy_history: Vec<DeployHistory>,
+    pub metrics: Option<ProcessMetrics>,
     pub user: Option<User>,
     pub app_name: String,
     pub t: &'static Dict,

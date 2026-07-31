@@ -91,6 +91,30 @@ define_dict! {
     detail_logs: { es: "Logs de la Aplicación", en: "Application Logs" },
     detail_log_conn: { es: "Conectando...", en: "Connecting..." },
 
+    // Deploy history & rollback
+    detail_deploy_history: { es: "Historial de Deploys", en: "Deploy History" },
+    detail_rollback_btn: { es: "⏪ Revertir", en: "⏪ Rollback" },
+    detail_no_history: { es: "Sin deploys anteriores.", en: "No previous deploys." },
+    detail_bundle_badge: { es: "bundle", en: "bundle" },
+    detail_binary_badge: { es: "binario", en: "binary" },
+
+    // Metrics
+    detail_metrics_title: { es: "Métricas del Proceso", en: "Process Metrics" },
+    detail_cpu: { es: "CPU", en: "CPU" },
+    detail_ram: { es: "RAM", en: "RAM" },
+    detail_uptime: { es: "Tiempo activo", en: "Uptime" },
+    detail_metrics_idle: { es: "Proceso no activo", en: "Process not running" },
+
+    // Settings
+    detail_settings_title: { es: "Configuración", en: "Settings" },
+    detail_custom_domain_title: { es: "Dominio Personalizado", en: "Custom Domain" },
+    detail_custom_domain_placeholder: { es: "ej. mi-app.com", en: "e.g. my-app.com" },
+    detail_custom_domain_save: { es: "Guardar Dominio", en: "Save Domain" },
+    detail_ram_limit_title: { es: "Límite de RAM (MB)", en: "RAM Limit (MB)" },
+    detail_ram_limit_placeholder: { es: "Sin límite", en: "No limit" },
+    detail_ram_limit_save: { es: "Aplicar Límite", en: "Apply Limit" },
+    detail_ram_limit_hint: { es: "Deja vacío para sin límite. El proceso se reiniciará.", en: "Leave empty for no limit. Process will restart." },
+
     // Landing
     land_subtitle: { 
         es: "Tu Plataforma como Servicio personal, minimalista y ultrarrápida. Despliega tus aplicaciones, usa almacenamiento S3 integrado y bases de datos SQLite al instante.", 

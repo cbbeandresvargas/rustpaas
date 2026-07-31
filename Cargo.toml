@@ -52,6 +52,13 @@ http-body-util = { version = "0.1" }
 rusqlite = { version = "0.31", features = ["bundled"] }
 bcrypt = "0.19.3"
 axum-extra = { version = "0.12.6", features = ["cookie"] }
+# Bundle extraction (tar.gz deploy)
+tar = "0.4"
+flate2 = "1"
+# Process metrics (CPU / RAM)
+sysinfo = { version = "0.31", default-features = false, features = ["system"] }
+# Resource limits
+libc = "0.2"
 
 [dev-dependencies]
 tempfile = "3"
